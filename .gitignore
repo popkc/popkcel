@@ -1,0 +1,16 @@
+.vscode/
+build/
+.clangd/
+cmake-build*
+.vs/
+
+*.user
+*.sln
+*.vcproj*
+*.pro
+*.swp
+compile_commands.json
+tags
+.DS_Store
+CMakeSettings.json
+*.orig
