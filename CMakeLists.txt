@@ -13,8 +13,8 @@ else(UNIX AND CMAKE_BUILD_TYPE STREQUAL Debug)
 endif(UNIX AND CMAKE_BUILD_TYPE STREQUAL Debug)
 
 add_subdirectory(popkcel)
-add_subdirectory(eldht)
+#add_subdirectory(eldht)
 add_subdirectory(test)
 
-add_dependencies(eldht popkcel)
+#add_dependencies(eldht popkcel)
 add_dependencies(eltest popkcel)
