@@ -1,116 +1,86 @@
 ﻿/*
 Copyright (C) 2020 popkc(popkcer at gmail dot com)
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License version 3 as published by
-the Free Software Foundation.
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
-#include <functional>
-#include <iostream>
-#include <memory>
-#include <string.h>
-#include <string>
-
-#ifndef _WIN32
-#    include <arpa/inet.h>
-#    include <sys/socket.h>
-#    include <unistd.h>
+#ifdef _WIN32
+#    define POPKCEL_SINGLETHREAD
 #endif
 
-#include <popkcel.h>
-
-using namespace std;
+#include <errno.h>
+#include <iostream>
+#include <popkcel.hpp>
 using namespace popkcel;
-MultiOperation* curMo;
+using namespace std;
 
-struct DoOnDelete
+char* buf;
+#ifdef _WIN32
+//from https://stackoverflow.com/a/17387176
+static std::string GetLastErrorAsString()
 {
-    function<void()> f;
-    DoOnDelete(const function<void()>& f)
-        : f(f)
-    {
-    }
-    ~DoOnDelete()
-    {
-        f();
-    }
-};
+    //Get the error message, if any.
+    DWORD errorMessageID = ::GetLastError();
+    if (errorMessageID == 0)
+        return std::string(); //No error message has been recorded
 
-void kkk()
-{
-    string sn;
-    DoOnDelete dod([]() {
-        cout << "Do not call me!" << endl;
-    });
-    PSSocket* so = new PSSocket(threadLoop, SOCKETTYPE_TCP);
-    PSSocket* so2 = new PSSocket(threadLoop, SOCKETTYPE_TCP);
-    auto addr = address("127.0.0.1", 1234);
-    auto addr2 = address("8.5.2.3", 1235);
-    std::unique_ptr<MultiOperation> mo(new MultiOperation(threadLoop));
-    curMo = mo.get();
-    so->multiConnect((sockaddr*)&addr, sizeof(addr), mo.get());
-    so2->multiConnect((sockaddr*)&addr2, sizeof(addr), mo.get());
-    mo->wait(999, 1);
-    if (mo->curSocket == so) {
-        sn = "so ";
-        so->write("abc", 3);
-    }
-    else if (mo->curSocket == so2) {
-        sn = "so2 ";
-        so2->write("def", 3);
-    }
-    if (mo->curSocket && mo->mapRv[mo->curSocket] == SOCKRV_OK)
-        sn += "ok.";
-    else
-        sn += "failed.";
-    cout << sn << endl;
-    mo->reBlock();
-    if (mo->timeOuted) {
-        cout << "Timeout." << endl;
-    }
-    char* buf = new char[10];
-    int r;
-    while ((r = so->read(buf, 10)) > 0) {
-        cout.write(buf, r);
-        cout.flush();
-    }
-    //auto s = GetLastErrorAsString();
+    LPSTR messageBuffer = nullptr;
+    size_t size = FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL, errorMessageID, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&messageBuffer, 0, NULL);
+
+    std::string message(messageBuffer, size);
+
+    //Free the buffer.
+    LocalFree(messageBuffer);
+
+    return message;
 }
-
-void la(HandleType fd, sockaddr* addr, socklen_t len)
+#endif
+void acceptCb(void* data, HandleType fd, sockaddr* addr, socklen_t addrLen)
 {
-    cout << "new connection." << endl;
-    PSSocket* ps = new PSSocket(threadLoop, fd);
-    ps->write("xxx", 3);
-    char* buf = new char[10];
+    cout << "new connection " << fd << endl;
+    PSSocket* ps = new PSSocket(threadLoop(), SOCKETTYPE_EXIST, fd);
     int r;
     while ((r = ps->read(buf, 10)) > 0) {
         cout.write(buf, r);
         cout.flush();
     }
-    delete ps;
+    cout << "ncerror " << r << " " << errno << endl;
 }
 
-int main(int argc, char* argv[])
+void oneShotCb(void* data, intptr_t rv)
 {
-    int r = popkcel::init();
-    //auto s = GetLastErrorAsString();
-    Loop loop;
-    //loop.setupFirstTimeCb(kkk);
-    Listener ls(&loop);
-    r = ls.listen(1111);
-    if (r == SOCKRV_ERROR) {
-        cout << "listen failed." << endl;
-        return 1;
-    }
-    ls.funcAccept = &la;
-    runLoop(&loop);
+    cout << "one shot cb" << endl;
+    PSSocket* ps = new PSSocket((Loop*)data);
+    sockaddr_in addr;
+    address(&addr, "127.0.0.1", 1234);
+    int r = ps->connect((sockaddr*)&addr, sizeof(addr), 3000);
+    cout << "connect result " << r << endl;
+    ps->write("abc", 3);
+}
+
+ssize_t aaa(ssize_t a)
+{
+    return a;
+}
+
+int main()
+{
+    popkcel_init();
+    buf = new char[10];
+    LoopPool lp(4);
+    Listener lsn(lp.getLoops());
+    //Loop loop;
+    //Listener lsn(&loop);
+    lsn.funcAccept = &acceptCb;
+    lsn.funcAcceptData = &lsn;
+    int r = lsn.listen(1234);
+    cout << "listen " << r << " " << errno << endl;
+    lp.getLoops()[0].oneShotCallback(&oneShotCb, lp.loops);
+    //loop.oneShotCallback(&oneShotCb, &loop);
+    lp.run();
+    //loop.run();
     return 0;
 }

@@ -1,30 +1,24 @@
 ﻿/*
 Copyright (C) 2020 popkc(popkcer at gmail dot com)
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License version 3 as published by
-the Free Software Foundation.
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
-#pragma once
+#ifndef POPKCEL_H
+#define POPKCEL_H
 
 #include <setjmp.h>
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef _WIN32
 #    include <BaseTsd.h>
 #    include <WinSock2.h>
 #    include <ws2tcpip.h>
 
-#include <windows.h>
-//#include <setjmpex.h>
+#    include <windows.h>
 typedef SSIZE_T ssize_t;
 #else
 #    include <arpa/inet.h>
@@ -40,16 +34,9 @@ typedef SSIZE_T ssize_t;
 #    endif
 #endif
 
-#include <atomic>
-#include <chrono>
-#include <functional>
-#include <map>
-#include <memory>
-#include <thread>
-#include <type_traits>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
+#ifndef POPKCEL_SINGLETHREAD
+#    include <pthread.h>
+#endif
 
 #ifndef LIBPOPKCEL_EXTERN
 #    ifdef _WIN32
@@ -67,338 +54,371 @@ typedef SSIZE_T ssize_t;
 #    endif
 #endif
 
-#ifdef POPKCELNOLOCK
-#    define ELLOCKLOOP(l) (void)0
-#    define ELUNLOCKLOOP(l) (void)0
-#else
-#    define ELLOCKLOOP(l) (l)->lock()
-#    define ELUNLOCKLOOP(l) (l)->unlock()
-#endif
-
 #ifndef STACKGROWTHUP
-#    define CHECKIFONSTACK(v, s) assert((v < (void*)&sp || v > (void*)loop->stackPos) && s)
+#    define ELCHECKIFONSTACK2(l, v, s) assert(((char*)(v) < (char*)&sp || (char*)(v) > (char*)(l)->stackPos) && s)
 #else
-#    define CHECKIFONSTACK(v, s) assert((v > (void*)&sp || v < (void*)loop->stackPos) && s)
+#    define ELCHECKIFONSTACK2(l, v, s) assert(((char*)(v) > (char*)&sp || (char*)(v) < (char*)(l)->stackPos) && s)
 #endif
 
 #ifdef NDEBUG
-#define ELCHECKIFONSTACK(v,s)
+#    define ELCHECKIFONSTACK(l, v, s)
 #else
-#define ELCHECKIFONSTACK(v,s) volatile char sp;CHECKIFONSTACK(v,s)
+#    define ELCHECKIFONSTACK(l, v, s) \
+        volatile char sp;             \
+        ELCHECKIFONSTACK2(l, v, s)
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 #ifdef _MSC_VER
-#ifdef _M_IX86
+#    define POPKCEL_THREADLOCAL __declspec(thread)
+#    ifdef _M_IX86
 typedef int32_t PopkcJmpBuf[6];
-#define POPKCJMPBUF PopkcJmpBuf
-#else
-typedef int64_t PopkcJmpBuf[30];
-#define POPKCJMPBUF __declspec(align(16)) PopkcJmpBuf
-#endif
-extern "C" LIBPOPKCEL_EXTERN int popkcSetjmp(PopkcJmpBuf env);
-extern "C" LIBPOPKCEL_EXTERN void popkcLongjmp(PopkcJmpBuf env,int value);
-#define POPKCSETJMP popkcSetjmp
-#define POPKCLONGJMP popkcLongjmp
-#else
-#define POPKCSETJMP setjmp
-#define POPKCLONGJMP longjmp
-#define POPKCJMPBUF jmp_buf
-#endif
-
-namespace popkcel {
-
-struct Loop;
-struct MultiOperation;
-struct LoopPool;
-struct Timer;
-
-enum Event {
-    EVENT_IN = 1,
-    EVENT_OUT = 2,
-    EVENT_DISCONNECTED = 4,
-    EVENT_ERROR = 8
-};
-
-enum ContextState {
-    CONTEXTSTATE_INIT,
-    CONTEXTSTATE_SUSPENDED,
-    CONTEXTSTATE_RESUMED
-};
-
-enum SockRv {
-    SOCKRV_OK,
-    SOCKRV_ERROR = -1,
-    SOCKRV_WOULDBLOCK = -2,
-    SOCKRV_PENDING = -3,
-    SOCKRV_ACCEPTFAIL = -4
-};
-
-enum SocketType {
-    SOCKETTYPE_TCP,
-    SOCKETTYPE_UDP
-};
-
-#ifdef _WIN32
-typedef HANDLE HandleType;
-#elif (defined __linux__)
-typedef int HandleType;
-#else
-typedef uintptr_t HandleType;
-#endif
-
-typedef std::function<void(intptr_t)> FuncCallback;
-typedef std::function<void(int)> FuncRedo;
-typedef std::function<void(HandleType fd, sockaddr* addr, socklen_t addrLen)> FuncAccept;
-typedef std::multimap<std::chrono::steady_clock::time_point, Timer*> TimerMap;
-
-struct LIBPOPKCEL_EXTERN Context
-{
-	POPKCJMPBUF jmpBuf;
-    char* stackPos;
-    char* savedStack = nullptr;
-
-    ~Context();
-};
-
-enum SingleOperationType {
-    SOT_NOACTION,
-    SOT_READ,
-    SOT_WRITE,
-    SOT_RECVFROM,
-    SOT_SENDTO
-};
-
-enum HandleTypeEnum {
-    HT_UNKNOWN,
-    HT_SOCKET,
-    HT_NOTIFIER,
-    HT_TIMER,
-    HT_LISTENSOCKET
-};
-
-struct SingleOperation
-{
-    FuncCallback inCb;
-    FuncCallback outCb;
-    FuncRedo inRedo;
-    FuncRedo outRedo;
-};
-
-struct LIBPOPKCEL_EXTERN Handle
-{
-#ifndef _WIN32
-	SingleOperation* addToLoop();
-#ifndef __linux__
-    HandleTypeEnum handleTypeEnum;
-#endif
-#endif
-    Loop* loop;
-    HandleType fd;
-    Handle(Loop* loop);
-    ~Handle();
-};
-
-struct LIBPOPKCEL_EXTERN Timer
-{
-    FuncCallback funcCb;
-    TimerMap::iterator iter;
-    Loop* loop;
-    int interval;
-    Timer(Loop* loop);
-    ~Timer();
-    void setTimer(uint32_t timeout, uint32_t interval = 0);
-    void stopTimer();
-};
-
-struct LIBPOPKCEL_EXTERN SysTimer : Handle
-{
-#ifdef _WIN32
-	FuncCallback funcCb;
-#endif
-    SysTimer(Loop* loop);
-    ~SysTimer();
-    void setTimer(int timeout, const FuncCallback& cb, bool periodic = false);
-    void stopTimer();
-};
-
-#ifdef _WIN32
-LIBPOPKCEL_EXTERN std::string GetLastErrorAsString();
-struct LIBPOPKCEL_EXTERN IocpCallback
-{
-	OVERLAPPED ol;
-	FuncCallback funcCb;
-	IocpCallback();
-};
-#endif
-
-//Socket的函数，成功或失败时直接返回，如果是在异步处理中，则在操作结束后调用回调函数。
-struct LIBPOPKCEL_EXTERN Socket : Handle
-{
-    int tryConnect(sockaddr* addr, socklen_t len, const FuncCallback& cb);
-    ssize_t tryWrite(const char* buf, size_t len, const FuncCallback& cb);
-    ssize_t trySendto(const char* buf, size_t len, sockaddr* addr, socklen_t addrLen, const FuncCallback& cb);
-    ssize_t tryRead(char* buf, size_t len, const FuncCallback& cb);
-    ssize_t tryRecvfrom(char* buf, size_t len, sockaddr* addr, socklen_t* addrLen, const FuncCallback& cb);
-    Socket(Loop* loop, SocketType type);
-    Socket(Loop* loop, HandleType fd);
-#ifdef _WIN32
-	IocpCallback *ic=nullptr;
-	~Socket();
-#endif // _WIN32
-
-};
-
-struct ReadInfo
-{
-    char* buf;
-    size_t len;
-};
-
-struct LIBPOPKCEL_EXTERN PSSocket : Socket
-{
-    std::vector<ReadInfo*> readInfos;
-    MultiOperation* mo = nullptr;
-    PSSocket(Loop* loop, SocketType type);
-    PSSocket(Loop* loop, HandleType fd);
-    ~PSSocket();
-    int connect(sockaddr* addr, int len, int timeout = -1);
-    ssize_t write(const char* buf, size_t len, int timeout = -1);
-    ssize_t sendto(const char* buf, size_t len, sockaddr* addr, socklen_t addrLen, int timeout = -1);
-    ssize_t read(char* buf, size_t len, int timeout = -1);
-    ssize_t readFor(char* buf, size_t len, int timeout = -1);
-    ssize_t recvfrom(char* buf, size_t len, sockaddr* addr, socklen_t* addrLen, int timeout = -1);
-    void multiConnect(sockaddr* addr, int len, MultiOperation* mo);
-    void multiWrite(const char* buf, size_t len, MultiOperation* mo);
-    void multiSendto(const char* buf, size_t len, sockaddr* addr, socklen_t addrLen, MultiOperation* mo);
-    void multiRead(char* buf, size_t len, MultiOperation* mo);
-    void multiReadFor(char* buf, size_t len, MultiOperation* mo);
-    void multiRecvfrom(char* buf, size_t len, sockaddr* addr, socklen_t* addrLen, MultiOperation* mo);
-
-protected:
-    void generalCb(intptr_t rv);
-    void readForCb(ReadInfo* ri, intptr_t rv);
-};
-
-struct LIBPOPKCEL_EXTERN Listener : Handle
-{
-    FuncAccept funcAccept;
-#ifdef _WIN32
-	char buffer[sizeof(sockaddr) * 2 + 32];
-	HandleType curSock;
-	~Listener();
-	void acceptOne();
-	void acceptCb(intptr_t rv);
-#endif
-    Listener(Loop* loop, HandleType fd = 0);
-    int listen(uint16_t port, int backlog = SOMAXCONN);
-};
-
-struct LIBPOPKCEL_EXTERN MultiOperation
-{
-    std::map<PSSocket*, int> mapRv;
-    Context context;
-    Timer* timer = nullptr;
-    Loop* loop;
-    PSSocket* curSocket=nullptr;
-    int count = 0;
-    int multiCallback;
-    bool timeOuted;
-
-    MultiOperation(Loop* loop);
-    ~MultiOperation();
-    void wait(int timeout = -1, int multiCallback = 0);
-    void reBlock() noexcept;
-    void checkCount();
-};
-
-struct LIBPOPKCEL_EXTERN Notifier : Handle
-{
-    Notifier(Loop* loop, HandleType fd = 0);
-    ~Notifier();
-#ifndef _WIN32
-    void inRedo(int ev);
-#else
-	FuncCallback funcCb;
-#endif
-    void setCb(const FuncCallback& cb);
-    int notify();
-};
-
-/*对于linux和win采取完全不同的通知方法，linux记录redo函数，在相应的event产生时，调用redo函数处理，由redo函数在完成或错误时去通知用户。
- * win的话用带overlapped的结构体存放回调函数，当IO完成时，直接调用回调函数。
- */
-struct LIBPOPKCEL_EXTERN Loop
-{
-    TimerMap timers;
-    std::unordered_set<MultiOperation*> moSet;
-	POPKCJMPBUF jmpBuf;
-    Context* curContext;
-    //当比原来的最短时间更短的timer出现时，需要一个timerFd通知loop
-    SysTimer* sysTimer;
-    char* stackPos;
-    LoopPool* loopPool;
-#ifdef _WIN32
-	IocpCallback* curOverlapped=nullptr;
-	ULONG_PTR completionKey;
-	DWORD numOfBytes;
-#else
-    std::unordered_map<HandleType, std::shared_ptr<SingleOperation> > operations;
-#    ifdef __linux__
-    epoll_event* events;
+#        define POPKCJMPBUF PopkcJmpBuf
 #    else
-    std::unordered_map<Handle*, FuncCallback> callbacks;
+typedef int64_t PopkcJmpBuf[30];
+#        define POPKCJMPBUF PopkcJmpBuf
+#    endif
+LIBPOPKCEL_EXTERN int popkcSetjmp(PopkcJmpBuf env);
+LIBPOPKCEL_EXTERN void popkcLongjmp(PopkcJmpBuf env, int value);
+#    define POPKCSETJMP popkcSetjmp
+#    define POPKCLONGJMP popkcLongjmp
+#else
+#    define POPKCSETJMP setjmp
+#    define POPKCLONGJMP longjmp
+#    define POPKCJMPBUF jmp_buf
+#    define POPKCEL_THREADLOCAL __thread
+#endif
+
+typedef void (*Popkcel_FuncCallback)(void* data, intptr_t value);
+
+#ifndef _WIN32
+typedef int Popkcel_HandleType;
+#    define POPKCEL_HANDLEFIELD            \
+        struct Popkcel_SingleOperation so; \
+        struct Popkcel_Loop* loop;         \
+        Popkcel_HandleType fd;
+#    define POPKCEL_SOCKETPF
+#else
+struct Popkcel_Socket;
+struct Popkcel_IocpCallback
+{
+    OVERLAPPED ol;
+    Popkcel_FuncCallback funcCb;
+    void* cbData;
+    struct Popkcel_Socket* sock;
+    Popkcel_FuncCallback funcCb2;
+    void* cbData2;
+    struct Popkcel_IocpCallback* next;
+};
+
+typedef HANDLE Popkcel_HandleType;
+#    define POPKCEL_HANDLEFIELD    \
+        struct Popkcel_Loop* loop; \
+        Popkcel_HandleType fd;
+
+#    define POPKCEL_SOCKETPF             \
+        struct Popkcel_IocpCallback* ic; \
+        int af;
+#endif
+
+enum Popkcel_Rv {
+    POPKCEL_OK = 0,
+    POPKCEL_ERROR = -1,
+    POPKCEL_WOULDBLOCK = -2,
+    POPKCEL_PENDING = -3
+};
+
+enum Popkcel_Event {
+    POPKCEL_EVENT_IN = 1,
+    POPKCEL_EVENT_OUT = 2,
+    POPKCEL_EVENT_ERROR = 4,
+    POPKCEL_EVENT_EDGE = 8,
+    POPKCEL_EVENT_USER = 16
+};
+
+enum Popkcel_SocketType {
+    POPKCEL_SOCKETTYPE_TCP = 1,
+    POPKCEL_SOCKETTYPE_UDP = 2,
+    POPKCEL_SOCKETTYPE_IPV6 = 4,
+    POPKCEL_SOCKETTYPE_EXIST = 8
+};
+
+struct Popkcel_Context
+{
+    POPKCJMPBUF jmpBuf;
+    char* stackPos;
+    char* savedStack;
+};
+
+static inline void popkcel_initContext(struct Popkcel_Context* context)
+{
+    context->savedStack = NULL;
+}
+
+LIBPOPKCEL_EXTERN void popkcel_destroyContext(struct Popkcel_Context* context);
+
+struct Popkcel_Rbtnode
+{
+    struct Popkcel_Rbtnode *parent, *left, *right;
+    int64_t key;
+    void* value;
+    char isRed;
+};
+
+struct Popkcel_RbtInsertPos
+{
+    struct Popkcel_Rbtnode** ipos;
+    struct Popkcel_Rbtnode* parent;
+};
+
+LIBPOPKCEL_EXTERN struct Popkcel_Rbtnode* popkcel_rbtFind(struct Popkcel_Rbtnode* root, int64_t key);
+LIBPOPKCEL_EXTERN struct Popkcel_RbtInsertPos popkcel_rbtInsertPos(struct Popkcel_Rbtnode** root, int64_t key);
+LIBPOPKCEL_EXTERN void popkcel_rbtInsertAtPos(struct Popkcel_Rbtnode** root, struct Popkcel_RbtInsertPos ipos,
+    struct Popkcel_Rbtnode* inode);
+LIBPOPKCEL_EXTERN void popkcel_rbtMultiInsert(struct Popkcel_Rbtnode** root, struct Popkcel_Rbtnode* inode);
+LIBPOPKCEL_EXTERN struct Popkcel_Rbtnode* popkcel_rbtNext(struct Popkcel_Rbtnode* node);
+LIBPOPKCEL_EXTERN struct Popkcel_Rbtnode* popkcel_rbtBegin(struct Popkcel_Rbtnode* root);
+LIBPOPKCEL_EXTERN struct Popkcel_Rbtnode* popkcel_rbtDelete(struct Popkcel_Rbtnode** root, struct Popkcel_Rbtnode* node);
+
+struct Popkcel_SingleOperation
+{
+    Popkcel_FuncCallback inRedo;
+    Popkcel_FuncCallback outRedo;
+    Popkcel_FuncCallback inCb;
+    Popkcel_FuncCallback outCb;
+    struct Popkcel_SingleOperation* next;
+    void *inRedoData, *outRedoData, *inCbData, *outCbData;
+};
+
+LIBPOPKCEL_EXTERN int popkcel_close(Popkcel_HandleType fd);
+
+struct Popkcel_Loop;
+
+struct Popkcel_Handle
+{
+    POPKCEL_HANDLEFIELD
+};
+
+LIBPOPKCEL_EXTERN void popkcel_initHandle(struct Popkcel_Handle* handle, struct Popkcel_Loop* loop);
+
+struct Popkcel_Timer
+{
+    struct Popkcel_Loop* loop;
+    struct Popkcel_Rbtnode* iter;
+    Popkcel_FuncCallback funcCb;
+    void* cbData;
+    unsigned int interval;
+};
+
+LIBPOPKCEL_EXTERN void popkcel_initTimer(struct Popkcel_Timer* timer, struct Popkcel_Loop* loop);
+LIBPOPKCEL_EXTERN void popkcel_setTimer(struct Popkcel_Timer* timer, unsigned int timeout, unsigned int interval);
+LIBPOPKCEL_EXTERN void popkcel_stopTimer(struct Popkcel_Timer* timer);
+
+struct Popkcel_SysTimer
+{
+    POPKCEL_HANDLEFIELD
+    Popkcel_FuncCallback funcCb;
+    void* cbData;
+};
+
+LIBPOPKCEL_EXTERN void popkcel_initSysTimer(struct Popkcel_SysTimer* sysTimer, struct Popkcel_Loop* loop);
+LIBPOPKCEL_EXTERN void popkcel_destroySysTimer(struct Popkcel_SysTimer* sysTimer);
+LIBPOPKCEL_EXTERN void popkcel_setSysTimer(struct Popkcel_SysTimer* sysTimer, unsigned int timeout, char periodic, Popkcel_FuncCallback cb, void* data);
+LIBPOPKCEL_EXTERN void popkcel_stopSysTimer(struct Popkcel_SysTimer* sysTimer);
+void popkcel__invokeLoop(void* data, intptr_t rv);
+
+struct Popkcel_Notifier
+{
+    POPKCEL_HANDLEFIELD
+#ifdef _WIN32
+    Popkcel_FuncCallback funcCb;
+    void* cbData;
+#endif
+};
+
+LIBPOPKCEL_EXTERN void popkcel_initNotifier(struct Popkcel_Notifier* notifier, struct Popkcel_Loop* loop, Popkcel_HandleType fd);
+LIBPOPKCEL_EXTERN void popkcel_destroyNotifier(struct Popkcel_Notifier* notifier);
+LIBPOPKCEL_EXTERN void popkcel_notifierSetCb(struct Popkcel_Notifier* notifier, Popkcel_FuncCallback cb, void* data);
+LIBPOPKCEL_EXTERN int popkcel_notifierNotify(struct Popkcel_Notifier* notifier);
+
+#define POPKCEL_SOCKETFIELD \
+    struct sockaddr* addr;  \
+    struct sockaddr* raddr; \
+    char* buf;              \
+    char* rbuf;             \
+    char* pos;              \
+    size_t len;             \
+    size_t rlen;            \
+    socklen_t addrLen;      \
+    socklen_t* raddrLen;    \
+    char bufCreated;        \
+    char addrCreated;       \
+    POPKCEL_SOCKETPF
+
+struct Popkcel_Socket
+{
+    POPKCEL_HANDLEFIELD
+    POPKCEL_SOCKETFIELD
+};
+
+LIBPOPKCEL_EXTERN int popkcel_initSocket(struct Popkcel_Socket* sock, struct Popkcel_Loop* loop, int socketType, Popkcel_HandleType fd);
+LIBPOPKCEL_EXTERN void popkcel_destroySocket(struct Popkcel_Socket* sock);
+LIBPOPKCEL_EXTERN int popkcel_tryConnect(struct Popkcel_Socket* sock, struct sockaddr* addr, socklen_t len, Popkcel_FuncCallback cb, void* data);
+LIBPOPKCEL_EXTERN ssize_t popkcel_tryWrite(struct Popkcel_Socket* sock, const char* buf, size_t len, Popkcel_FuncCallback cb, void* data);
+LIBPOPKCEL_EXTERN ssize_t popkcel_trySendto(struct Popkcel_Socket* sock, const char* buf, size_t len, struct sockaddr* addr, socklen_t addrLen, Popkcel_FuncCallback cb, void* data);
+LIBPOPKCEL_EXTERN ssize_t popkcel_tryRead(struct Popkcel_Socket* sock, char* buf, size_t len, Popkcel_FuncCallback cb, void* data);
+LIBPOPKCEL_EXTERN ssize_t popkcel_tryRecvfrom(struct Popkcel_Socket* sock, char* buf, size_t len, struct sockaddr* addr, socklen_t* addrLen, Popkcel_FuncCallback cb, void* data);
+
+struct Popkcel_MultiOperation
+{
+    struct Popkcel_Context context;
+    struct Popkcel_Timer timer;
+    struct Popkcel_Rbtnode* rvs;
+    struct Popkcel_Loop* loop;
+    struct Popkcel_PSSocket* curSocket;
+    int count;
+    char multiCallback;
+    char timeOuted;
+};
+
+LIBPOPKCEL_EXTERN void popkcel_initMultiOperation(struct Popkcel_MultiOperation*, struct Popkcel_Loop* loop);
+LIBPOPKCEL_EXTERN void popkcel_destroyMultiOperation(struct Popkcel_MultiOperation* mo);
+LIBPOPKCEL_EXTERN void popkcel_resetMultiOperation(struct Popkcel_MultiOperation* mo);
+LIBPOPKCEL_EXTERN void popkcel_multiOperationWait(struct Popkcel_MultiOperation* mo, int timeout, char multiCallback);
+LIBPOPKCEL_EXTERN void popkcel_multiOperationReblock(struct Popkcel_MultiOperation* mo);
+
+#define POPKCEL_PSSOCKETFIELD          \
+    struct Popkcel_MultiOperation* mo; \
+    size_t totalRead;
+
+struct Popkcel_PSSocket
+{
+    POPKCEL_HANDLEFIELD
+    POPKCEL_SOCKETFIELD
+    POPKCEL_PSSOCKETFIELD
+};
+
+static inline void popkcel_destroyPSSocket(struct Popkcel_PSSocket* sock)
+{
+    popkcel_destroySocket((struct Popkcel_Socket*)sock);
+}
+
+LIBPOPKCEL_EXTERN void popkcel_initPSSocket(struct Popkcel_PSSocket* sock, struct Popkcel_Loop* loop, int socketType, Popkcel_HandleType fd);
+LIBPOPKCEL_EXTERN void popkcel_multiConnect(struct Popkcel_PSSocket* sock, struct sockaddr* addr, socklen_t addrLen, struct Popkcel_MultiOperation* mo);
+LIBPOPKCEL_EXTERN int popkcel_connect(struct Popkcel_PSSocket* sock, struct sockaddr* addr, int len, int timeout);
+LIBPOPKCEL_EXTERN void popkcel_multiWrite(struct Popkcel_PSSocket* sock, const char* buf, size_t len, struct Popkcel_MultiOperation* mo);
+LIBPOPKCEL_EXTERN ssize_t popkcel_write(struct Popkcel_PSSocket* sock, const char* buf, size_t len, int timeout);
+LIBPOPKCEL_EXTERN void popkcel_multiSendto(struct Popkcel_PSSocket* sock, const char* buf, size_t len, struct sockaddr* addr, socklen_t addrLen, struct Popkcel_MultiOperation* mo);
+LIBPOPKCEL_EXTERN ssize_t popkcel_sendto(struct Popkcel_PSSocket* sock, const char* buf, size_t len, struct sockaddr* addr, socklen_t addrLen, int timeout);
+LIBPOPKCEL_EXTERN void popkcel_multiRead(struct Popkcel_PSSocket* sock, char* buf, size_t len, struct Popkcel_MultiOperation* mo);
+LIBPOPKCEL_EXTERN ssize_t popkcel_read(struct Popkcel_PSSocket* sock, char* buf, size_t len, int timeout);
+LIBPOPKCEL_EXTERN void popkcel_multiReadFor(struct Popkcel_PSSocket* sock, char* buf, size_t len, struct Popkcel_MultiOperation* mo);
+LIBPOPKCEL_EXTERN ssize_t popkcel_readFor(struct Popkcel_PSSocket* sock, char* buf, size_t len, int timeout);
+LIBPOPKCEL_EXTERN void popkcel_multiRecvfrom(struct Popkcel_PSSocket* sock, char* buf, size_t len, struct sockaddr* addr, socklen_t* addrLen, struct Popkcel_MultiOperation* mo);
+LIBPOPKCEL_EXTERN ssize_t popkcel_recvfrom(struct Popkcel_PSSocket* sock, char* buf, size_t len, struct sockaddr* addr, socklen_t* addrLen, int timeout);
+
+typedef void (*Popkcel_FuncAccept)(void* data, Popkcel_HandleType fd, struct sockaddr* addr, socklen_t addrLen);
+
+struct Popkcel_Listener
+{
+    POPKCEL_HANDLEFIELD
+    Popkcel_FuncAccept funcAccept;
+    void* funcAcceptData;
+#ifdef _WIN32
+    char buffer[sizeof(struct sockaddr_in6) * 2 + 32];
+    Popkcel_HandleType curSock;
+#endif
+    char ipv6;
+};
+
+LIBPOPKCEL_EXTERN void popkcel_initListener(struct Popkcel_Listener* listener, struct Popkcel_Loop* loop, char ipv6, Popkcel_HandleType fd);
+LIBPOPKCEL_EXTERN void popkcel_destroyListener(struct Popkcel_Listener* listener);
+LIBPOPKCEL_EXTERN int popkcel_listen(struct Popkcel_Listener* listener, uint16_t port, int backlog);
+
+struct Popkcel_OneShot
+{
+    struct Popkcel_Notifier notifier;
+    Popkcel_FuncCallback cb;
+    void* data;
+};
+
+struct Popkcel_Loop
+{
+    POPKCJMPBUF jmpBuf;
+    struct Popkcel_SysTimer sysTimer;
+#ifndef _WIN32
+    struct Popkcel_SingleOperation* soToDelete;
+#    ifdef __linux__
+    struct epoll_event* events;
+#    else
     struct kevent* events;
 #    endif
+#else
+    struct Popkcel_IocpCallback* curOverlapped;
+    ULONG_PTR completionKey;
+    DWORD numOfBytes;
+#endif
     size_t maxEvents;
-    //lock只是用来在线程间移动socket时保护operations这个map的，其他东西跨线程用不到也就无需保护
-    std::atomic<bool> spinLock;
-	int curIndex;
-	int numOfEvents;
-	bool inited;
-    void lock();
-    void unlock();
-    int addHandle(Handle* handle);
-    int removeHandle(Handle* handle);
-	void eventCall(HandleType fd, int event);
-#endif
-    HandleType loopFd;
-    bool running = false;
-
-    Loop(LoopPool* loopPool = nullptr, size_t maxEvents = 16);
-    ~Loop();
-	Loop(const Loop&);
-    Loop& operator=(const Loop&) = delete;
-    void setupFirstTimeCb(const std::function<void()>& fft);
-    void setTimeout(uint32_t timeout);
-    void stopTimer();
-    void removeMo(MultiOperation* mo);
-    int checkTimers();
-
-protected:
-    void setupTimer();
+    struct Popkcel_Rbtnode* timers;
+    char* stackPos;
+    struct Popkcel_Context* curContext;
+    //struct Popkcel_HashInfo** moHash;
+    //size_t hashSize;
+    Popkcel_HandleType loopFd;
+    int numOfEvents;
+    int curIndex;
+    char inited;
+    char running;
 };
 
-struct LIBPOPKCEL_EXTERN LoopPool
+LIBPOPKCEL_EXTERN void popkcel_initLoop(struct Popkcel_Loop* loop, size_t maxEvents);
+LIBPOPKCEL_EXTERN void popkcel_destroyLoop(struct Popkcel_Loop* loop);
+int popkcel__checkTimers();
+LIBPOPKCEL_EXTERN int64_t popkcel_getCurrentTime();
+LIBPOPKCEL_EXTERN int popkcel_addHandle(struct Popkcel_Loop* loop, struct Popkcel_Handle* handle, int ev);
+LIBPOPKCEL_EXTERN int popkcel_removeHandle(struct Popkcel_Loop* loop, struct Popkcel_Handle* handle);
+LIBPOPKCEL_EXTERN void popkcel_oneShotCallback(struct Popkcel_Loop* loop, Popkcel_FuncCallback cb, void* data);
+
+#ifdef POPKCEL_SINGLETHREAD
+#    define Popkcel_ThreadType int
+#else
+#    define Popkcel_ThreadType pthread_t
+#endif
+struct Popkcel_LoopPool
 {
-#ifdef _WIN32
-    HandleType iocp;
-#endif
-    std::vector<Loop> loops;
-    std::vector<std::thread> threads;
-    LoopPool(size_t numOfLoops = 0, size_t maxEvents = 16);
-    int run();
-    void detach();
-    void closeAll();
-    void moveSocket(size_t threadNum, Socket* socket);
+    struct Popkcel_Loop* loops;
+    Popkcel_ThreadType* threads;
+    size_t loopSize;
+    char isRun;
 };
 
-extern thread_local Loop* threadLoop;
+LIBPOPKCEL_EXTERN void popkcel_initLoopPool(struct Popkcel_LoopPool* loopPool, size_t loopSize, size_t maxEvents);
+LIBPOPKCEL_EXTERN void popkcel_destroyLoopPool(struct Popkcel_LoopPool* loopPool);
+LIBPOPKCEL_EXTERN void popkcel_loopPoolDetach(struct Popkcel_LoopPool* loopPool);
+LIBPOPKCEL_EXTERN int popkcel_loopPoolRun(struct Popkcel_LoopPool* loopPool);
+LIBPOPKCEL_EXTERN void popkcel_moveSocket(struct Popkcel_LoopPool* loopPool, size_t threadNum, struct Popkcel_Socket* sock);
 
-LIBPOPKCEL_EXTERN sockaddr_in address(uint32_t ip, uint16_t port);
-LIBPOPKCEL_EXTERN sockaddr_in address(const char* ip, uint16_t port);
-LIBPOPKCEL_EXTERN void suspend(Context* context) noexcept;
-LIBPOPKCEL_EXTERN void resume(Context* context) noexcept;
-LIBPOPKCEL_EXTERN int closeFd(HandleType fd);
-LIBPOPKCEL_EXTERN int runLoop(Loop* loop);
-LIBPOPKCEL_EXTERN int init();
+extern POPKCEL_THREADLOCAL struct Popkcel_Loop* popkcel_threadLoop;
+
+LIBPOPKCEL_EXTERN int popkcel_runLoop(struct Popkcel_Loop* loop);
+LIBPOPKCEL_EXTERN int popkcel_init();
+LIBPOPKCEL_EXTERN int popkcel_address(struct sockaddr_in* addr, const char* ip, uint16_t port);
+LIBPOPKCEL_EXTERN int popkcel_address6(struct sockaddr_in6* addr, const char* ip, uint16_t port);
+LIBPOPKCEL_EXTERN struct sockaddr_in popkcel_addressI(uint32_t ip, uint16_t port);
+LIBPOPKCEL_EXTERN void popkcel_resume(struct Popkcel_Context* context);
+LIBPOPKCEL_EXTERN void popkcel_suspend(struct Popkcel_Context* context);
+
+#ifndef _WIN32
+void popkcel__notifierInRedo(void* data, intptr_t ev);
+void popkcel__clearSo(struct Popkcel_Loop* loop);
+void popkcel__eventCall(struct Popkcel_SingleOperation* so, int event);
+#endif
+
+#ifdef __cplusplus
 }
+#endif
+
+#endif
