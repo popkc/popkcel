@@ -513,10 +513,8 @@ int popkcel_loopPoolRun(struct Popkcel_LoopPool* loopPool)
         pthread_create(&loopPool->threads[i], NULL, (void* (*)(void*)) & popkcel_runLoop, &loopPool->loops[i + 1]);
         pthread_detach(loopPool->threads[i]);
     }
-    return popkcel_runLoop(loopPool->loops);
-#else
-    return popkcel_runLoop(loopPool->loops);
 #endif
+    return popkcel_runLoop(loopPool->loops);
 }
 
 void popkcel_moveSocket(struct Popkcel_LoopPool* loopPool, size_t threadNum, struct Popkcel_Socket* sock)

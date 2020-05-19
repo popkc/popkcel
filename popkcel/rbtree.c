@@ -344,10 +344,3 @@ restart:;
     }
     return node;
 }
-
-static unsigned int calcHashValue(size_t hashSize, void* keyp)
-{
-    unsigned int key = (unsigned int)(uintptr_t)keyp;
-    key = (key >> 4) | (key << 28);
-    return key % hashSize;
-}
