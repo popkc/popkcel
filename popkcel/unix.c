@@ -428,7 +428,7 @@ int popkcel_listen(struct Popkcel_Listener* listener, uint16_t port, int backlog
         addrLen = sizeof(struct sockaddr_in6);
     }
 
-    if (listener->ipv6 == 2) {
+    if (listener->ipv6 == 1) {
         int on = 1;
         setsockopt(listener->fd, IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on));
     }

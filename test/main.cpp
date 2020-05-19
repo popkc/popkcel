@@ -53,7 +53,7 @@ void acceptCb(void* data, HandleType fd, sockaddr* addr, socklen_t addrLen)
 void oneShotCb(void* data, intptr_t rv)
 {
     cout << "one shot cb" << endl;
-    PSSocket* ps = new PSSocket((Loop*)data);
+    PSSocket* ps = new PSSocket((Loop*)data);//也可以用threadLoop()来获得当前线程的Loop
     sockaddr_in addr;
     address(&addr, "127.0.0.1", 1234);
     int r = ps->connect((sockaddr*)&addr, sizeof(addr), 3000);
