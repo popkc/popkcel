@@ -191,6 +191,8 @@ struct Socket : Popkcel_Socket
     POPKCEL_LOOPFUNC
 };
 
+struct PSSocket;
+
 struct MultiOperation : Popkcel_MultiOperation
 {
     MultiOperation(Loop* loop)
@@ -216,6 +218,11 @@ struct MultiOperation : Popkcel_MultiOperation
     void reblock()
     {
         popkcel_multiOperationReblock(this);
+    }
+
+    intptr_t getResult(PSSocket* sock)
+    {
+        return popkcel_multiOperationGetResult(this, (Popkcel_PSSocket*)sock);
     }
     POPKCEL_LOOPFUNC
 };

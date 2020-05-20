@@ -289,6 +289,7 @@ LIBPOPKCEL_EXTERN void popkcel_destroyMultiOperation(struct Popkcel_MultiOperati
 LIBPOPKCEL_EXTERN void popkcel_resetMultiOperation(struct Popkcel_MultiOperation* mo);
 LIBPOPKCEL_EXTERN void popkcel_multiOperationWait(struct Popkcel_MultiOperation* mo, int timeout, char multiCallback);
 LIBPOPKCEL_EXTERN void popkcel_multiOperationReblock(struct Popkcel_MultiOperation* mo);
+LIBPOPKCEL_EXTERN intptr_t popkcel_multiOperationGetResult(struct Popkcel_MultiOperation* mo, struct Popkcel_PSSocket* sock);
 
 #define POPKCEL_PSSOCKETFIELD          \
     struct Popkcel_MultiOperation* mo; \

@@ -83,9 +83,7 @@ popkcel_multiOperationWait(mo, 15000, 0);
 //协程将在此处挂起，当所有连接出结果（成功或失败），或者15秒过后，协程将继续执行后续代码
 if (mo->timeOuted)//判断是否超时
 ...
-struct Popkcel_Rbtnode* it = popkcel_rbtFind(mo->rvs, (int64_t)sock1);
-//查找sock1的在此次操作中的结果，所有socket的操作结果是存在Popkcel_MultiOperation结构体下的一个红黑树中
-intptr_t r = (intptr_t)it->value;
+intptr_t r = popkcel_multiOperationGetResult(mo, sock1);
 //r即是sock1 connect的结果，值为POPKCEL_OK则表示连接成功，为POPKCEL_ERROR表示连接显式地返回错误，为POPKCEL_WOULDBLOCK表示连接超时
 ```
 如果你想要在其中一个socket连接出结果时立即处理，那么只需把popkcel_multiOperationWait函数的第三个参数改为非0即可。

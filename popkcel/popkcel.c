@@ -526,3 +526,12 @@ void popkcel_moveSocket(struct Popkcel_LoopPool* loopPool, size_t threadNum, str
     popkcel_addHandle(nl, (struct Popkcel_Handle*)sock, 0);
 #endif
 }
+
+intptr_t popkcel_multiOperationGetResult(struct Popkcel_MultiOperation* mo, struct Popkcel_PSSocket* sock)
+{
+    struct Popkcel_Rbtnode* it = popkcel_rbtFind(mo->rvs, (int64_t)sock);
+    if (!it)
+        return POPKCEL_ERROR;
+    else
+        return (intptr_t)it->value;
+}
