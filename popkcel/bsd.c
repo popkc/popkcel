@@ -15,6 +15,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include <sys/event.h>
 
@@ -57,34 +58,25 @@ int popkcel_addHandle(struct Popkcel_Loop* loop, struct Popkcel_Handle* handle, 
     struct kevent kev;
     int r;
     uint16_t flag;
-    int filter;
     if (!ev) {
         flag = EV_ADD | EV_CLEAR;
-        filter = EVFILT_READ | EVFILT_WRITE;
+        ev=0xffffffff;
     }
     else {
-        filter = 0;
-        if (ev & POPKCEL_EVENT_IN)
-            filter |= EVFILT_READ;
-        if (ev & POPKCEL_EVENT_OUT)
-            filter |= EVFILT_WRITE;
-        if (ev & POPKCEL_EVENT_USER)
-            filter |= EVFILT_USER;
-
         if (ev & POPKCEL_EVENT_EDGE)
             flag = EV_ADD | EV_CLEAR;
         else
             flag = EV_ADD;
     }
 
-    if (filter & EVFILT_WRITE) {
+    if (ev & POPKCEL_EVENT_OUT) {
         EV_SET(&kev, handle->fd, EVFILT_WRITE, flag, 0, 0, handle);
         r = kevent(loop->loopFd, &kev, 1, NULL, 0, NULL);
         if (r < 0)
             return r;
     }
 
-    if (filter & EVFILT_USER) {
+    if (ev & POPKCEL_EVENT_USER) {
         EV_SET(&kev, (uintptr_t)handle, EVFILT_USER, flag, NOTE_FFNOP, 0, handle);
         r = kevent(loop->loopFd, &kev, 1, NULL, 0, NULL);
         if (r < 0)
@@ -121,6 +113,7 @@ int popkcel_runLoop(struct Popkcel_Loop* loop)
             makeTimespec(&ts, r);
             loop->numOfEvents = kevent(loop->loopFd, NULL, 0, loop->events, loop->maxEvents, &ts);
         }
+        int er=errno;
         loop->curIndex = 0;
         if (!loop->inited) {
             loop->inited = 1;
