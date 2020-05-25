@@ -204,7 +204,10 @@ int popkcel_init()
 
 int popkcel_close(Popkcel_HandleType fd)
 {
-    return CloseHandle(fd);
+    if (CloseHandle(fd) == TRUE)
+        return POPKCEL_OK;
+    else
+        return POPKCEL_ERROR;
 }
 
 int popkcel_initSocket(struct Popkcel_Socket* sock, struct Popkcel_Loop* loop, int socketType, Popkcel_HandleType fd)
@@ -252,7 +255,7 @@ static void overlappedCommonCb(void* data, intptr_t rv)
     }
 
     if (ic->funcCb2)
-        ic->funcCb2(ic->cbData2, rv);
+        ic->funcCb2(ic->cbData2, rv < 0 ? POPKCEL_ERROR : (ssize_t)threadLoop->numOfBytes);
 }
 
 static ssize_t setOl(ssize_t r, Popkcel_FuncCallback cb, void* data, struct Popkcel_IocpCallback* ic, struct Popkcel_Socket* so)

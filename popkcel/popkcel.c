@@ -16,6 +16,7 @@ POPKCEL_THREADLOCAL struct Popkcel_Loop* popkcel_threadLoop;
 
 int popkcel__checkTimers()
 {
+    popkcel_stopSysTimer(&popkcel_threadLoop->sysTimer);
     int rv = -1;
     int64_t ctp = popkcel_getCurrentTime();
     struct Popkcel_Rbtnode* it = popkcel_rbtBegin(popkcel_threadLoop->timers);
@@ -286,15 +287,15 @@ void popkcel_multiOperationWait(struct Popkcel_MultiOperation* mo, int timeout, 
     popkcel_suspend(&mo->context);
 }
 
-void popkcel_initPSSocket(struct Popkcel_PSSocket* sock, struct Popkcel_Loop* loop, int socketType, Popkcel_HandleType fd)
+int popkcel_initPSSocket(struct Popkcel_PSSocket* sock, struct Popkcel_Loop* loop, int socketType, Popkcel_HandleType fd)
 {
 #ifndef NDEBUG
     if (loop->running) {
         ELCHECKIFONSTACK(loop, sock, "Do not allocate PSSocket on stack!");
     }
 #endif
-    popkcel_initSocket((struct Popkcel_Socket*)sock, loop, socketType, fd);
     sock->mo = NULL;
+    return popkcel_initSocket((struct Popkcel_Socket*)sock, loop, socketType, fd);
 }
 
 #define MULTICALL(f, to, ...)                                                          \
@@ -402,6 +403,10 @@ static void moReadForCb(void* data, intptr_t rv)
         sock->totalRead += rv;
         moGeneralCb(data, sock->totalRead);
     }
+    else if (rv == 0) {
+    meet0:;
+        moGeneralCb(data, sock->totalRead);
+    }
     else {
         for (;;) {
             sock->rbuf += rv;
@@ -415,6 +420,8 @@ static void moReadForCb(void* data, intptr_t rv)
                 sock->totalRead += r;
                 moGeneralCb(data, sock->totalRead);
             }
+            else
+                goto meet0;
         }
     }
 }

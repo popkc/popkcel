@@ -16,3 +16,4 @@ tags
 CMakeSettings.json
 *.orig
 *.bak
+*.autosave

@@ -16,3 +16,6 @@ add_subdirectory(test)
 
 #add_dependencies(eldht popkcel)
 add_dependencies(eltest popkcel)
+
+add_custom_target(doc doxygen ${CMAKE_SOURCE_DIR}/Doxyfile
+WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
