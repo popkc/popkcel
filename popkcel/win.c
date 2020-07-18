@@ -255,7 +255,7 @@ static void overlappedCommonCb(void* data, intptr_t rv)
     }
 
     if (ic->funcCb2)
-        ic->funcCb2(ic->cbData2, rv < 0 ? POPKCEL_ERROR : (ssize_t)threadLoop->numOfBytes);
+        ic->funcCb2(ic->cbData2, rv < 0 ? POPKCEL_ERROR : (ssize_t)popkcel_threadLoop->numOfBytes);
 }
 
 static ssize_t setOl(ssize_t r, Popkcel_FuncCallback cb, void* data, struct Popkcel_IocpCallback* ic, struct Popkcel_Socket* so)
