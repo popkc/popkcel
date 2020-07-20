@@ -275,6 +275,12 @@ struct Popkcel_SingleOperation
  */
 LIBPOPKCEL_EXTERN int popkcel_close(Popkcel_HandleType fd);
 
+/**关闭socket
+ * @param fd 要关闭的文件描述符
+ * @return 成功返回POPKCEL_OK，失败返回POPKCEL_ERROR
+ */
+LIBPOPKCEL_EXTERN int popkcel_closeSocket(Popkcel_HandleType fd);
+
 struct Popkcel_Loop;
 
 ///Handle类型，并没有被实际使用，它是其它Handle类型的“基类”

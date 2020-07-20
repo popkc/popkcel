@@ -210,6 +210,14 @@ int popkcel_close(Popkcel_HandleType fd)
         return POPKCEL_ERROR;
 }
 
+int popkcel_closeSocket(Popkcel_HandleType fd)
+{
+	if (!closesocket((SOCKET)fd))
+		return POPKCEL_OK;
+	else
+		return POPKCEL_ERROR;
+}
+
 int popkcel_initSocket(struct Popkcel_Socket* sock, struct Popkcel_Loop* loop, int socketType, Popkcel_HandleType fd)
 {
     sock->loop = loop;

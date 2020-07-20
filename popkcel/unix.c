@@ -51,6 +51,11 @@ int popkcel_close(Popkcel_HandleType fd)
     return close(fd);
 }
 
+int popkcel_closeSocket(Popkcel_HandleType fd)
+{
+	return close(fd);
+}
+
 void popkcel__clearSo(struct Popkcel_Loop* loop)
 {
     if (!loop->soToDelete)
