@@ -742,7 +742,7 @@ struct Popkcel_OneShot
 ///保存event loop相关数据的类型
 struct Popkcel_Loop
 {
-    ///在事件循环函数中执行setjmp所城的jmp_buf
+    ///在事件循环函数中执行setjmp所需的jmp_buf
     POPKCJMPBUF jmpBuf;
     ///系统Timer，用于在需要时唤醒Loop
     struct Popkcel_SysTimer sysTimer;

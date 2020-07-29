@@ -38,3 +38,5 @@ endif(${MULTITHREAD})
 if(WIN32)
 target_link_libraries(popkcel PUBLIC WS2_32)
 endif(WIN32)
+
+set_property(TARGET popkcel PROPERTY C_STANDARD 99)
