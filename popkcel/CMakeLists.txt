@@ -1,0 +1,43 @@
+﻿if(WIN32)
+    set(ELPS win.c)
+    set(MULTITHREAD OFF CACHE BOOL "" FORCE)
+else(WIN32)
+    set(ELPS unix.c)
+    if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
+        list(APPEND ELPS linux.c)
+    else(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
+        list(APPEND ELPS bsd.c)
+    endif(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
+endif(WIN32)
+
+option(MULTITHREAD "Multithread support" ON)
+
+if(MSVC)
+        enable_language(ASM_MASM)
+        if(${CMAKE_SIZEOF_VOID_P} EQUAL 4)
+            list(APPEND ELPS winx86.asm)
+            set_source_files_properties(winx86.asm PROPERTIES COMPILE_FLAGS "/safeseh")
+        else(${CMAKE_SIZEOF_VOID_P} EQUAL 4)
+            list(APPEND ELPS winx64.asm)
+        endif(${CMAKE_SIZEOF_VOID_P} EQUAL 4)
+endif(MSVC)
+
+if(${ELBT} STREQUAL SHARED)
+    add_definitions(-DLIBPOPKCEL_SHARED)
+endif(${ELBT} STREQUAL SHARED)
+
+add_library(popkcel ${ELBT} popkcel.c popkcel.h rbtree.c psr.c ${ELPS})
+add_definitions(-D_FORTIFY_SOURCE=0)
+
+if(${MULTITHREAD})
+    target_link_libraries(popkcel PUBLIC pthread)
+else(${MULTITHREAD})
+    add_definitions(-DPOPKCEL_SINGLETHREAD)
+endif(${MULTITHREAD})
+
+if(WIN32)
+    target_link_libraries(popkcel PUBLIC WS2_32)
+else()
+endif(WIN32)
+
+set_property(TARGET popkcel PROPERTY C_STANDARD 99)
