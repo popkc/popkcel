@@ -5,8 +5,6 @@ popkcel是“popkc的event loop”的意思，它支持epoll、kqueue和IOCP。�
 
 popkcel用简单的方法来实现协程。它先在loop的事件循环函数中用setjmp来标记一个点，并记录这个点在stack中的位置。当某个协程需要挂起时，这个协程也标记自己的当前点，并把当前点到事件循环函数中的点之间的stack保存下来，然后longjmp到那个点上。要恢复协程，就longjmp到协程之前保存的点上，再用memcpy把之前保存的stack恢复。
 
-popkcel还提供了一个header only的c++头文件，方便C++代码使用。这基本上就是个对纯C部分进行调用的简单wrapper。
-
 ## 编译方法
 
 使用CMAKE进行编译即可。popkcel在UNIX下仅依赖pthread，基本可以算是没有第三方依赖的。编译非常简单，使用常规的CMAKE编译方法即可。
@@ -16,7 +14,7 @@ popkcel还提供了一个header only的c++头文件，方便C++代码使用。�
 cmake .
 make
 ```
-## C使用方法
+## 使用方法
 
 先包含头文件。
 ```c
@@ -99,14 +97,6 @@ popkcel支持ipv6，初始化socket时加上POPKCEL_SOCKETTYPE_IPV6即可。
 popkcel_initSocket(sock, (Popkcel_Loop*)data, POPKCEL_SOCKETTYPE_TCP | POPKCEL_SOCKETTYPE_IPV6, 0);
 ```
 popkcel_initListener函数的第三个参数为1时表示监听ipv6地址。
-
-## C++使用方法
-
-包含头文件
-```c++
-#include <popkcel.hpp>
-```
-popkcel的c++部分基本上就是对纯C部分的简单包装，没有什么实质的东西，只是为了简化C++调用时的代码。可以查看test/main.cpp来获知C++调用的办法。
 
 ## 操作系统支持
 
