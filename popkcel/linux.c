@@ -197,6 +197,7 @@ int popkcel_notifierNotify(struct Popkcel_Notifier* notifier)
 
 void popkcel_initLoop(struct Popkcel_Loop* loop, size_t maxEvents)
 {
+    loop->running = 0;
     loop->timers = NULL;
     popkcel_initSysTimer(&loop->sysTimer, loop);
     if (maxEvents == 0)

@@ -32,25 +32,29 @@ int popkcel__checkTimers()
     int rv = -1;
     int64_t ctp = popkcel_getCurrentTime();
     struct Popkcel_Rbtnode* it;
-    /*
+#ifndef NDEBUG
     it = popkcel_rbtBegin(popkcel_threadLoop->timers);
-    printf("timerrbtree %ld", ctp);
+    printf("timerrbtree %lld", ctp);
+    int64_t lkey = 0;
     while (it) {
-        printf(" %ld", it->key);
+        assert(it->key >= lkey);
+        lkey = it->key;
+        printf(" %lld", it->key);
         it = popkcel_rbtNext(it);
     }
     printf("\n");
-*/
+#endif
     while ((it = popkcel_rbtBegin(popkcel_threadLoop->timers))) {
         if (it->key <= ctp) {
             struct Popkcel_Timer* timer = (struct Popkcel_Timer*)it;
             popkcel_rbtDelete(&popkcel_threadLoop->timers, (struct Popkcel_Rbtnode*)timer);
             timer->iter.isRed = 2;
+            int r = 0;
             if (timer->funcCb) {
-                timer->funcCb(timer->cbData, (intptr_t)&timer);
+                r = timer->funcCb(timer->cbData, (intptr_t)timer);
             }
 
-            if (timer) {
+            if (!r) {
                 if (timer->interval > 0) {
                     int64_t nctp = ctp + timer->interval;
                     timer->iter.key = nctp;

@@ -44,6 +44,7 @@ static void makeTimespec(struct timespec* ts, int ms)
 
 void popkcel_initLoop(struct Popkcel_Loop* loop, size_t maxEvents)
 {
+    loop->running = 0;
     loop->loopFd = kqueue();
     if (maxEvents == 0)
         maxEvents = 8;

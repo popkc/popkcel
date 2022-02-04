@@ -10,6 +10,19 @@ else(UNIX AND CMAKE_BUILD_TYPE STREQUAL Debug)
     set(ELBT STATIC)
 endif(UNIX AND CMAKE_BUILD_TYPE STREQUAL Debug)
 
+#[[
+if(${CMAKE_VERSION} VERSION_LESS "3.20.0")
+    TEST_BIG_ENDIAN(IS_BIG_ENDIAN)
+    if(IS_BIG_ENDIAN)
+        add_definitions(-DPOPKCEL_BIGENDIAN)
+    endif()
+else()
+    if(CMAKE_C_BYTE_ORDER EQUAL BIG_ENDIAN)
+        add_compile_definitions(POPKCEL_BIGENDIAN)
+    endif()
+endif()
+]]
+
 include(custom.txt OPTIONAL)
 
 add_subdirectory(popkcel)

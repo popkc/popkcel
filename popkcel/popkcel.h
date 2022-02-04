@@ -560,7 +560,7 @@ struct Popkcel_PsrField;
 
 ///return 0表示继续，非0表示不要继续
 typedef int (*Popkcel_PsrRecvCb)(struct Popkcel_PsrSocket* sock, intptr_t rv);
-typedef struct Popkcel_PsrField* (*Popkcel_PsrListenCb)(struct Popkcel_PsrSocket* sock);
+typedef struct Popkcel_PsrField* (*Popkcel_PsrListenCb)(struct Popkcel_PsrSocket* sock, struct Popkcel_PsrField* psr);
 typedef int (*Popkcel_PsrFuncCallback)(struct Popkcel_PsrField* psr, intptr_t rv);
 
 ///UDP Socket的PSRUDP协议（Popkc's Simple Reliable UDP）部分，可以把udp当成类似tcp来用，主要用于为内网IP之间提供连通能力和可靠传输
@@ -638,6 +638,8 @@ LIBPOPKCEL_EXTERN int popkcel_psrTryConnect(struct Popkcel_PsrField* psr);
 LIBPOPKCEL_EXTERN int popkcel_psrTrySend(struct Popkcel_PsrField* psr, const char* data, size_t len, Popkcel_FuncCallback callback, void* userData);
 
 LIBPOPKCEL_EXTERN void popkcel_psrAcceptOne(struct Popkcel_PsrSocket* sock, struct Popkcel_PsrField* psr, Popkcel_PsrFuncCallback cbFunc);
+
+LIBPOPKCEL_EXTERN int popkcel_psrSendCache(struct Popkcel_PsrField* psr);
 
 ///MultiOperation用于在同一协程中同时对多个PSSocket执行伪同步操作。注意，MultiOperation一定要分配在heap上，不能分配在stack上。
 struct Popkcel_MultiOperation

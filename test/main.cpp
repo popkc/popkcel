@@ -11,12 +11,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 #    define POPKCEL_SINGLETHREAD
 #endif
 
+#include <assert.h>
 #include <errno.h>
 #include <iostream>
-#include <popkcel.hpp>
+#include <popkcel.h>
 #include <string.h>
 
-using namespace popkcel;
 using namespace std;
 
 namespace {
@@ -25,10 +25,9 @@ Popkcel_Loop* loop;
 char* buf;
 #ifdef _WIN32
 //from https://stackoverflow.com/a/17387176
-static std::string GetLastErrorAsString()
+static std::string errorToString(DWORD err)
 {
-    //Get the error message, if any.
-    DWORD errorMessageID = ::GetLastError();
+    DWORD errorMessageID = err;
     if (errorMessageID == 0)
         return std::string(); //No error message has been recorded
 
@@ -43,7 +42,13 @@ static std::string GetLastErrorAsString()
 
     return message;
 }
+
+static std::string GetLastErrorAsString()
+{
+    return errorToString(::GetLastError());
+}
 #endif
+/*
 void acceptCb(void* data, HandleType fd, sockaddr* addr, socklen_t addrLen)
 {
     cout << "new connection " << fd << endl;
@@ -67,7 +72,7 @@ int oneShotCb(void* data, intptr_t rv)
     ps->write("abc", 3);
     return 0;
 }
-
+*/
 Popkcel_PsrField *pfc, *pfs;
 int count = 0;
 
@@ -106,8 +111,10 @@ int pfCb(Popkcel_PsrField* data, intptr_t rv)
     return 0;
 }
 
-struct Popkcel_PsrField* psrListenCb(struct Popkcel_PsrSocket* sock)
+struct Popkcel_PsrField* psrListenCb(struct Popkcel_PsrSocket* sock, struct Popkcel_PsrField* psr)
 {
+    if (psr)
+        return NULL;
     pfs = new Popkcel_PsrField;
     popkcel_psrAcceptOne(sock, pfs, &pfCb);
     return pfs;
@@ -195,6 +202,28 @@ int sysTimerOsCb(void* data, intptr_t rv)
     return 0;
 }
 
+int pfNeCb(Popkcel_PsrField* data, intptr_t rv)
+{
+    cout << "pfNeCb " << rv << endl;
+    return 0;
+}
+
+int psrNonexistOsCb(void* data, intptr_t rv)
+{
+    Popkcel_PsrSocket* ps = new Popkcel_PsrSocket;
+    if (popkcel_initPsrSocket(ps, loop, 0, 0, 0, &psrListenCb, NULL, 1000) == POPKCEL_ERROR) {
+        cout << "initPsrSocket error." << endl;
+        return 0;
+    }
+    pfc = new Popkcel_PsrField;
+    popkcel_initPsrField(ps, pfc, &pfNeCb);
+    popkcel_address((sockaddr_in*)&pfc->remoteAddr, "127.0.0.1", 40897);
+    pfc->addrLen = sizeof(sockaddr_in);
+    int r = popkcel_psrTryConnect(pfc);
+    cout << "oscb " << r << endl;
+    return 0;
+}
+
 void testOscb(Popkcel_FuncCallback cb)
 {
     loop = new Popkcel_Loop;
@@ -203,12 +232,58 @@ void testOscb(Popkcel_FuncCallback cb)
     popkcel_runLoop(loop);
 }
 
+void testRbt()
+{
+    Popkcel_Rbtnode* root = NULL;
+    Popkcel_Rbtnode* a = new Popkcel_Rbtnode[100];
+    for (int64_t i = 0; i < 100; i++) {
+        a[i].key = 100 - i;
+        popkcel_rbtMultiInsert(&root, a + i);
+    }
+    auto it = popkcel_rbtBegin(root);
+    while (it) {
+        cout << it->key << " ";
+        it = popkcel_rbtNext(it);
+    }
+    cout << endl;
+    for (int i = 0; i < 100; i++) {
+        it = popkcel_rbtBegin(root);
+        popkcel_rbtDelete(&root, it);
+    }
+    assert(!root);
+    for (int64_t i = 0; i < 100; i++) {
+        a[i].key = i;
+        auto ipos = popkcel_rbtInsertPos(&root, a[i].key);
+        popkcel_rbtInsertAtPos(&root, ipos, a + i);
+    }
+    it = popkcel_rbtBegin(root);
+    while (it) {
+        cout << it->key << " ";
+        it = popkcel_rbtNext(it);
+    }
+    cout << endl;
+    for (int i = 80; i >= 50; i--) {
+        popkcel_rbtDelete(&root, a + i);
+    }
+    for (int i = 50; i <= 60; i++) {
+        popkcel_rbtMultiInsert(&root, a + i);
+    }
+    it = popkcel_rbtBegin(root);
+    while (it) {
+        cout << it->key << " ";
+        it = popkcel_rbtNext(it);
+    }
+    cout << endl;
+    cout << "ok" << endl;
+}
 }
 
 int main()
 {
     popkcel_init();
-    testOscb(&pfOsCb);
+    testOscb(&psrNonexistOsCb);
+    //testRbt();
+    //testOscb(&pfOsCb);
     //testOscb(&sysTimerOsCb);
     /*
     buf = new char[10];

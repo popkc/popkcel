@@ -33,6 +33,7 @@ static inline void initIocpCallback(struct Popkcel_IocpCallback* iocp)
 
 void popkcel_initLoop(struct Popkcel_Loop* loop, size_t maxEvents)
 {
+    loop->running = 0;
     loop->timers = NULL;
     loop->loopFd = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
     popkcel_initSysTimer(&loop->sysTimer, loop);
