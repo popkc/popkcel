@@ -389,7 +389,7 @@ restart:;
                 do {
                     switch (flag) {
                     case POPKCEL_PF_TRANSFORM:
-                        if (rv < ul + 6)
+                        if ((uintptr_t)rv < ul + 6)
                             GOTOEND;
                         memcpy(&ul2, sock->psrBuffer + ul, 4);
                         ul2 = ntohl(ul2);
@@ -397,7 +397,7 @@ restart:;
                         memcpy(&us, sock->psrBuffer + ul, 2);
                         us = ntohs(us);
                         ul += 2;
-                        if (!us || ul + us > rv)
+                        if (!us || ul + us > (uintptr_t)rv)
                             GOTOEND;
                         psrAddReply(psr, ul2);
                         if (ul2 == psr->othersSendId) {
@@ -446,7 +446,7 @@ restart:;
                         ul += us;
                         break;
                     case POPKCEL_PF_TRANSFORM | POPKCEL_PF_REPLY: {
-                        if (rv < ul + 8)
+                        if ((uintptr_t)rv < ul + 8)
                             GOTOEND;
                         uint32_t st;
                         memcpy(&st, sock->psrBuffer + ul, 4);
@@ -486,7 +486,7 @@ restart:;
                         psrCheckUnsent(psr);
                     } break;
                     case POPKCEL_PF_TRANSFORM | POPKCEL_PF_REPLY | POPKCEL_PF_SINGLE: {
-                        if (rv < ul + 5)
+                        if ((uintptr_t)rv < ul + 5)
                             GOTOEND;
                         size_t count = (unsigned char)sock->psrBuffer[ul];
                         ul++;
@@ -521,11 +521,11 @@ restart:;
                         GOTOEND;
                     }
 
-                    if (ul >= rv)
+                    if (ul >= (uintptr_t)rv)
                         break;
                     flag = sock->psrBuffer[ul];
                     ul++;
-                } while (ul < rv);
+                } while (ul < (uintptr_t)rv);
             }
             else if (flag == POPKCEL_PF_CLOSED) {
                 if (rv != 5)
