@@ -1,4 +1,4 @@
-﻿# popkcel
+# popkcel
 一个用纯C实现的跨平台的简单的异步网络库，带有协程功能。
 
 popkcel是“popkc的event loop”的意思，它支持epoll、kqueue和IOCP。相比于libuv，它的特点是轻量、简单，而且支持一种类似于协程的功能，使得你可以像写同步代码一样地写异步代码。它还支持一种简单的可靠UDP传输协议PSR（既Popkc's Simple Reliable UDP），可以利用UDP打洞的原理为内网机器之间提供类似TCP的可靠连接。
@@ -37,7 +37,15 @@ listener.funcAccept = &acceptCb;//设置回调函数
 listener.funcAcceptData = &listener;//设置传送给回调函数的void*数据
 popkcel_listen(&listener, 1234, SOMAXCONN);//监听1234端口
 ```
-要使用popkcel的伪同步socket（语法类似同步操作，但事实上是使用类似协程方法实现的异步操作），需要loop在运行状态下才行，而loop在运行状态时线程就被卡住了无法执行后续代码，所以我们需要用一个一次性回调函数，来让loop在运行时执行我们的函数。
+popkcel支持像libuv那样的简单的异步网络操作，如：
+```c
+struct Popkcel_Socket* sock = (struct Popkcel_Socket*)malloc(sizeof(struct Popkcel_Socket));
+popkcel_initSocket(sock, popkcel_threadLoop, POPKCEL_SOCKETTYPE_UDP, 0);
+popkcel_trySendto(sock, buffer, bufferLen, addr, addrLen, cb, userData);
+```
+这些标准的异步操作都需要有一个回调函数，使用起来比较麻烦。popkcel还提供了一种伪同步的socket操作，它的语法类似同步操作，但它实际上是使用类似协程方法实现的异步操作，因此它的性能也会低于异步操作。使用伪同步操作的好处是不需要像同步操作那样为每个SOCKET提供额外的线程，同时能避免像异步操作那样子使用麻烦的、大量的回调函数。
+
+要使用popkcel的伪同步socket，需要loop在运行状态下才行，而loop在运行状态时线程就被卡住了无法执行后续代码，所以我们需要用一个一次性回调函数，来让loop在运行时执行我们的函数。
 ```c
 popkcel_oneShotCallback(&loop, oneShotCb, NULL);
 //回调函数为oneShotCb，传递给该函数的void*数据为NULL
@@ -97,6 +105,10 @@ popkcel支持ipv6，初始化socket时加上POPKCEL_SOCKETTYPE_IPV6即可。
 popkcel_initSocket(sock, (Popkcel_Loop*)data, POPKCEL_SOCKETTYPE_TCP | POPKCEL_SOCKETTYPE_IPV6, 0);
 ```
 popkcel_initListener函数的第三个参数为1时表示监听ipv6地址。
+
+popkcel还支持通过udp方式模拟tcp连接。popkcel支持一种名为psr的协议，这协议是我自己定义的，它比较简单，可以让udp连接像tcp一样可靠。它当然不是真的tcp连接，它只是让udp像tcp一样可靠。要知道在ipv6还没有彻底流行的现在，要在两台不同内网的计算机间进行点对点的可靠通信是非常麻烦的事，而这就是psr协议要解决的事情。类似的协议已经有不少了（如utorrent的utp），但我的psr胜在简单，如果只是进行简单的通信而不是进行大文件传输的话，用psr就够了。
+
+可以参考test里的代码来使用psr。psr目前只支持异步操作，暂不支持伪同步操作。
 
 ## 操作系统支持
 
