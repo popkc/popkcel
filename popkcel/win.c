@@ -441,6 +441,25 @@ int popkcel__invokeLoop(void* data, intptr_t rv)
     return 0;
 }
 
+void* popkcel_dlopen(const char* fileName)
+{
+    auto h = LoadLibrary(fileName);
+    return (void*)h;
+}
+
+int popkcel_dlclose(void* handle)
+{
+    if (FreeLibrary((HMODULE)handle))
+        return POPKCEL_OK;
+    else
+        return POPKCEL_ERROR;
+}
+
+void* popkcel_dlsym(void* handle, const char* symbol)
+{
+    return (void*)GetProcAddress((HMODULE)handle, symbol);
+}
+
 int64_t popkcel_getCurrentTime()
 {
 #if (_WIN32_WINNT >= 0x0600)

@@ -14,6 +14,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 #define POPKCEL_PSRVERSION 0
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum Popkcel_PsrState {
     POPKCEL_PS_INIT,
     POPKCEL_PS_CONNECTING,
@@ -134,5 +138,9 @@ LIBPOPKCEL_EXTERN int popkcel_psrTrySend(struct Popkcel_PsrField* psr, const cha
 LIBPOPKCEL_EXTERN void popkcel_psrAcceptOne(struct Popkcel_PsrSocket* sock, struct Popkcel_PsrField* psr, Popkcel_PsrFuncCallback cbFunc);
 
 LIBPOPKCEL_EXTERN int popkcel_psrSendCache(struct Popkcel_PsrField* psr);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

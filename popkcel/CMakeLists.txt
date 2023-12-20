@@ -26,9 +26,10 @@ if(PSR)
     list(APPEND ELPS psr.c)
 endif(PSR)
 
+message(${ELPS})
 add_library(popkcel ${ELBT} popkcel.c popkcel.h rbtree.c ${ELPS})
 #add_definitions(-D_FORTIFY_SOURCE=0)
-target_compile_definitions(popkcel PUBLIC _FORTIFY_SOURCE=0)
+target_compile_definitions(popkcel PRIVATE _FORTIFY_SOURCE=0)
 
 if(${ELBT} STREQUAL SHARED)
     #add_definitions(-DLIBPOPKCEL_SHARED)
