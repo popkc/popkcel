@@ -1,5 +1,5 @@
 ﻿/*
-Copyright (C) 2020-2022 popkc(popkc at 163 dot com)
+Copyright (C) 2020-2023 popkc(popkc at 163 dot com)
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
@@ -7,6 +7,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 #include "popkcel.h"
+#include "popkcelpsr.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -52,7 +53,7 @@ static int canSend(struct Popkcel_PsrField* psr, uint32_t sid)
     return sid >= rlid && sid <= e;
 }
 
-static void psrCheckUnsent(struct Popkcel_PsrField* psr) //效率有点低，可优化
+static void psrCheckUnsent(struct Popkcel_PsrField* psr) // 效率有点低，可优化
 {
     struct Popkcel_Rbtnode* it = popkcel_rbtBegin(psr->nodePieceSend);
     if (!it)
@@ -191,13 +192,13 @@ static int psrRecvFromCb(void* data, intptr_t rv)
 #endif
 restart:;
     if (rv == POPKCEL_ERROR) {
-        //todo
+        // todo
 #ifndef NDEBUG
 #    ifdef WIN32
         printf("recv error %lu\n", GetLastError());
 #    endif
 #endif
-        //assert(0);
+        // assert(0);
         goto end;
     }
 
@@ -238,7 +239,7 @@ restart:;
                     }
                 }
 
-                if (psr->state == POPKCEL_PS_CONNECTING) { //互相连接对方的情况，视为连接已完成，保留两者中更“小”的tranId，不调用新连接回调，但仍会发送连接成功的通知
+                if (psr->state == POPKCEL_PS_CONNECTING) { // 互相连接对方的情况，视为连接已完成，保留两者中更“小”的tranId，不调用新连接回调，但仍会发送连接成功的通知
                     if (memcmp(psr->tranId, sock->psrBuffer + 2, 4) > 0) {
                         memcpy(psr->tranId, sock->psrBuffer + 2, 4);
                         if (psr->nodePieceSend && psr->nodePieceSend->key == 0) {
@@ -383,7 +384,7 @@ restart:;
 
                 ul = bufChecksum(psr->tranId, sock->psrBuffer + 5, (int)rv - 5);
                 if (memcmp(&ul, sock->psrBuffer + 1, 4))
-                    GOTOEND; //checksum fail
+                    GOTOEND; // checksum fail
 
                 ul = 5;
                 do {
@@ -407,7 +408,7 @@ restart:;
                                 goto end;
                             struct Popkcel_Rbtnode* it = popkcel_rbtFind(psr->nodePieceReceive, psr->othersSendId);
                             if (it) {
-                                //assert(0);
+                                // assert(0);
                                 do {
                                     struct Popkcel_RbtnodeBuf* rit = (struct Popkcel_RbtnodeBuf*)it;
                                     psr->recvBuf = rit->buffer;
@@ -429,7 +430,7 @@ restart:;
                             }
                         }
                         else {
-                            //assert(0);
+                            // assert(0);
                             uint32_t m = psr->othersSendId + psr->window;
                             if (ul2 <= m || (m < psr->othersSendId && ul2 > psr->othersSendId)) {
                                 assert(m > psr->othersSendId);
@@ -461,7 +462,7 @@ restart:;
                             GOTOEND;
 
                         struct Popkcel_Rbtnode* it = popkcel_rbtLowerBound(psr->nodePieceSend, st);
-                        //assert(it->key == st);
+                        // assert(it->key == st);
                         int restarted = 0;
                         while (it && it->key - st <= len) {
                             if (psr->lastMyConfirmedSendId < it->key
@@ -643,11 +644,11 @@ static int makeReplyBuffer(struct Popkcel_PsrField* psr, char* buf, int bufLen)
         }
     }
 
-    if (sid >= 0 && !it) { //遍历完成
+    if (sid >= 0 && !it) { // 遍历完成
         if (sid == lid) {
             if (ids)
                 addSingle(&ids, &bufLen, pos, (uint32_t)sid);
-            else { //最常见的情况，所以单独写一下
+            else { // 最常见的情况，所以单独写一下
                 buf[pos] = (POPKCEL_PF_REPLY | POPKCEL_PF_TRANSFORM | POPKCEL_PF_SINGLE);
                 pos++;
                 buf[pos] = 1;
@@ -717,7 +718,7 @@ static int sendCb(void* data, intptr_t rv)
     return 0;
 }
 
-//5000毫秒一次重传
+// 5000毫秒一次重传
 static int psrTimerCb(void* data, intptr_t rv)
 {
     struct Popkcel_RbtnodePsrSend* rps = data;
@@ -771,7 +772,7 @@ static int psrSendBuffer(struct Popkcel_PsrField* psr, Popkcel_FuncCallback cb, 
     }
 }
 
-//每10毫秒发送一次的timer cb，用于合并短的发送包
+// 每10毫秒发送一次的timer cb，用于合并短的发送包
 static int cbPsrTimerSend(void* data, intptr_t rv)
 {
     struct Popkcel_PsrField* psr = data;
@@ -875,7 +876,7 @@ int popkcel_psrTryConnect(struct Popkcel_PsrField* psr)
 
 int popkcel_psrTrySend(struct Popkcel_PsrField* psr, const char* data, size_t len, Popkcel_FuncCallback callback, void* userData)
 {
-    //printf("psrTrySend %d\n", psr->state);
+    // printf("psrTrySend %d\n", psr->state);
     if (psr->state == POPKCEL_PS_CONNECTED) {
         psr->state = POPKCEL_PS_TRANSFER;
         psr->mySendId = 0;
@@ -1013,7 +1014,7 @@ void popkcel_destroyPsrSocket(struct Popkcel_PsrSocket* sock)
     popkcel_stopTimer(&sock->timerKeepAlive);
     popkcel_destroySocket((struct Popkcel_Socket*)sock);
 
-    //清理所有psrfield
+    // 清理所有psrfield
     struct Popkcel_RbtnodeData* it;
     while ((it = (struct Popkcel_RbtnodeData*)sock->nodePf)) {
         psrError(it->value);

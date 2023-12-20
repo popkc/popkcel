@@ -1,5 +1,5 @@
 ﻿/*
-Copyright (C) 2020-2022 popkc(popkc at 163 dot com)
+Copyright (C) 2020-2023 popkc(popkc at 163 dot com)
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
@@ -56,13 +56,17 @@ void popkcel_destroyLoop(struct Popkcel_Loop* loop)
 
 int popkcel_runLoop(struct Popkcel_Loop* loop)
 {
+#ifndef POPKCEL_NOFAKESYNC
     volatile char stackPos;
     loop->stackPos = (char*)&stackPos;
+#endif
     popkcel_threadLoop = loop;
     loop->running = 1;
+#ifndef POPKCEL_NOFAKESYNC
     if (POPKCSETJMP(loop->jmpBuf)) {
         loop = popkcel_threadLoop;
     }
+#endif
 
     while (loop->running) {
         int r = popkcel__checkTimers();
@@ -109,7 +113,7 @@ int popkcel_removeHandle(struct Popkcel_Loop* loop, struct Popkcel_Handle* handl
 
 void popkcel_initNotifier(struct Popkcel_Notifier* notifier, struct Popkcel_Loop* loop)
 {
-    //popkcel_initHandle((struct Popkcel_Handle*)notifier, loop);
+    // popkcel_initHandle((struct Popkcel_Handle*)notifier, loop);
     notifier->loop = loop;
 }
 
@@ -141,7 +145,7 @@ void popkcel_notifierSetCb(struct Popkcel_Notifier* notifier, Popkcel_FuncCallba
 
 void popkcel_destroyNotifier(struct Popkcel_Notifier* notifier)
 {
-    //destroyHandle((struct Popkcel_Handle*)notifier);
+    // destroyHandle((struct Popkcel_Handle*)notifier);
 }
 
 static VOID CALLBACK sysTimerCb(PVOID data, BOOLEAN fired)

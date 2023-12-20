@@ -1,5 +1,5 @@
 ﻿/*
-Copyright (C) 2020-2022 popkc(popkc at 163 dot com)
+Copyright (C) 2020-2023 popkc(popkc at 163 dot com)
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
@@ -98,8 +98,10 @@ int popkcel_removeHandle(struct Popkcel_Loop* loop, struct Popkcel_Handle* handl
 
 int popkcel_runLoop(struct Popkcel_Loop* loop)
 {
+#ifndef POPKCEL_NOFAKESYNC
     volatile char stackPos;
     loop->stackPos = (char*)&stackPos;
+#endif
     popkcel_threadLoop = loop;
     loop->inited = 0;
     loop->running = 1;
@@ -113,14 +115,16 @@ int popkcel_runLoop(struct Popkcel_Loop* loop)
             makeTimespec(&ts, r);
             loop->numOfEvents = kevent(loop->loopFd, NULL, 0, loop->events, loop->maxEvents, &ts);
         }
-        //int er = errno;
+        // int er = errno;
         loop->curIndex = 0;
         if (!loop->inited) {
             loop->inited = 1;
+#ifndef POPKCEL_NOFAKESYNC
             if (setjmp(loop->jmpBuf)) {
                 loop = popkcel_threadLoop;
                 loop->curIndex++;
             }
+#endif
         }
 
         if (!loop->running)

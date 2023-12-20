@@ -1,5 +1,5 @@
 ﻿/*
-Copyright (C) 2020-2022 popkc(popkc at 163 dot com)
+Copyright (C) 2020-2023 popkc(popkc at 163 dot com)
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
@@ -10,6 +10,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 #include "popkcel.h"
 
 #include <assert.h>
+#include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -503,4 +504,22 @@ int popkcel__invokeLoop(void* data, intptr_t rv)
     (void)data;
     (void)rv;
     return 0;
+}
+
+void* popkcel_dlopen(const char* fileName)
+{
+    return dlopen(fileName, RTLD_LAZY);
+}
+
+int popkcel_dlclose(void* handle)
+{
+    if (!dlclose(handle))
+        return POPKCEL_OK;
+    else
+        return POPKCEL_ERROR;
+}
+
+void* popkcel_dlsym(void* handle, const char* symbol)
+{
+    return dlsym(handle, symbol);
 }
