@@ -20,9 +20,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 #include <unistd.h>
 
 #define WRITEBUFFERCOMMONFIELD        \
-    struct Popkcel_WriteBuffer* next; \
+    struct Popkcel_WriteBuffer *next; \
     Popkcel_FuncCallback outCb;       \
-    void* cbData;
+    void *cbData;
 
 struct Popkcel_SendToBuffer
 {
@@ -48,7 +48,7 @@ int popkcel_init()
     return 0;
 }
 
-void popkcel__eventCall(struct Popkcel_SingleOperation* so, int event)
+void popkcel__eventCall(struct Popkcel_SingleOperation *so, int event)
 {
     if (event & POPKCEL_EVENT_ERROR) {
         if (so->inRedo) {
@@ -85,9 +85,9 @@ int popkcel_closeSocket(Popkcel_HandleType fd)
     return close(fd);
 }
 
-int popkcel_initSocket(struct Popkcel_Socket* sock, struct Popkcel_Loop* loop, int socketType, Popkcel_HandleType fd)
+int popkcel_initSocket(struct Popkcel_Socket *sock, struct Popkcel_Loop *loop, int socketType, Popkcel_HandleType fd)
 {
-    popkcel_initHandle((struct Popkcel_Handle*)sock, loop);
+    popkcel_initHandle((struct Popkcel_Handle *)sock, loop);
     sock->writeBuffer = NULL;
     sock->ipv6 = (socketType & POPKCEL_SOCKETTYPE_IPV6) ? 1 : 0;
     if (socketType & POPKCEL_SOCKETTYPE_EXIST) {
@@ -103,11 +103,11 @@ int popkcel_initSocket(struct Popkcel_Socket* sock, struct Popkcel_Loop* loop, i
     f = fcntl(sock->fd, F_SETFL, f | O_NONBLOCK);
     if (f == -1)
         return POPKCEL_ERROR;
-    popkcel_addHandle(loop, (struct Popkcel_Handle*)sock, 0);
+    popkcel_addHandle(loop, (struct Popkcel_Handle *)sock, 0);
     return POPKCEL_OK;
 }
 
-static void clearWriteBuffer(struct Popkcel_Socket* sock)
+static void clearWriteBuffer(struct Popkcel_Socket *sock)
 {
     struct Popkcel_WriteBuffer *buf, *old;
     buf = sock->writeBuffer;
@@ -118,15 +118,15 @@ static void clearWriteBuffer(struct Popkcel_Socket* sock)
     }
 }
 
-void popkcel_destroySocket(struct Popkcel_Socket* sock)
+void popkcel_destroySocket(struct Popkcel_Socket *sock)
 {
     close(sock->fd);
     clearWriteBuffer(sock);
 }
 
-static int connectOutRedo(void* data, intptr_t ev)
+static int connectOutRedo(void *data, intptr_t ev)
 {
-    struct Popkcel_Socket* sock = data;
+    struct Popkcel_Socket *sock = data;
     int r;
     if (ev & POPKCEL_EVENT_ERROR)
         r = POPKCEL_ERROR;
@@ -137,7 +137,7 @@ static int connectOutRedo(void* data, intptr_t ev)
     return 0;
 }
 
-int popkcel_tryConnect(struct Popkcel_Socket* sock, struct sockaddr* addr, socklen_t len, Popkcel_FuncCallback cb, void* data)
+int popkcel_tryConnect(struct Popkcel_Socket *sock, struct sockaddr *addr, socklen_t len, Popkcel_FuncCallback cb, void *data)
 {
     int r = connect(sock->fd, addr, len);
     if (!r)
@@ -157,18 +157,18 @@ int popkcel_tryConnect(struct Popkcel_Socket* sock, struct sockaddr* addr, sockl
         return POPKCEL_ERROR;
 }
 
-static int writeOutRedo(void* data, intptr_t ev)
+static int writeOutRedo(void *data, intptr_t ev)
 {
-    struct Popkcel_Socket* sock = data;
+    struct Popkcel_Socket *sock = data;
     sock->so.outRedo = NULL;
     if (ev & POPKCEL_EVENT_ERROR) {
         while (sock->writeBuffer) {
-            struct Popkcel_WriteBuffer* wb = sock->writeBuffer;
+            struct Popkcel_WriteBuffer *wb = sock->writeBuffer;
             sock->writeBuffer = wb->next;
             if (wb->outCb) {
                 wb->outCb(wb->cbData, POPKCEL_ERROR);
                 free(wb);
-                return 0; //error只通知一次，收到通知后用户应自行destroy socket
+                return 0; // error只通知一次，收到通知后用户应自行destroy socket
             }
             else
                 free(wb);
@@ -176,7 +176,7 @@ static int writeOutRedo(void* data, intptr_t ev)
     }
     else {
         while (sock->writeBuffer) {
-            struct Popkcel_WriteBuffer* wb = sock->writeBuffer;
+            struct Popkcel_WriteBuffer *wb = sock->writeBuffer;
             sock->writeBuffer = wb->next;
             ssize_t r = write(sock->fd, wb->buffer + wb->bytesWritten, wb->bufLen - wb->bytesWritten);
             if (r >= wb->bufLen - wb->bytesWritten) {
@@ -206,7 +206,7 @@ static int writeOutRedo(void* data, intptr_t ev)
     return 0;
 }
 
-ssize_t popkcel_tryWrite(struct Popkcel_Socket* sock, const char* buf, size_t len, Popkcel_FuncCallback cb, void* data)
+ssize_t popkcel_tryWrite(struct Popkcel_Socket *sock, const char *buf, size_t len, Popkcel_FuncCallback cb, void *data)
 {
     ssize_t r = write(sock->fd, buf, len);
     if (r < 0) {
@@ -230,14 +230,14 @@ ssize_t popkcel_tryWrite(struct Popkcel_Socket* sock, const char* buf, size_t le
 
     buf += r;
     len -= r;
-    struct Popkcel_WriteBuffer* wb = malloc(sizeof(struct Popkcel_WriteBuffer) + len);
+    struct Popkcel_WriteBuffer *wb = malloc(sizeof(struct Popkcel_WriteBuffer) + len);
     wb->bufLen = len;
     wb->bytesWritten = 0;
     wb->outCb = cb;
     wb->cbData = data;
     wb->next = NULL;
     memcpy(wb->buffer, buf, len);
-    struct Popkcel_WriteBuffer** pwb = (struct Popkcel_WriteBuffer**)&sock->writeBuffer;
+    struct Popkcel_WriteBuffer **pwb = (struct Popkcel_WriteBuffer **)&sock->writeBuffer;
     while (*pwb) {
         pwb = &(*pwb)->next;
     }
@@ -245,18 +245,18 @@ ssize_t popkcel_tryWrite(struct Popkcel_Socket* sock, const char* buf, size_t le
     return POPKCEL_WOULDBLOCK;
 }
 
-static int sendToOutRedo(void* data, intptr_t ev)
+static int sendToOutRedo(void *data, intptr_t ev)
 {
-    struct Popkcel_Socket* sock = data;
+    struct Popkcel_Socket *sock = data;
     sock->so.outRedo = NULL;
     if (ev & POPKCEL_EVENT_ERROR) {
         while (sock->writeBuffer) {
-            struct Popkcel_SendToBuffer* sb = sock->writeBuffer;
+            struct Popkcel_SendToBuffer *sb = sock->writeBuffer;
             sock->writeBuffer = sb->next;
             if (sb->outCb) {
                 sb->outCb(sb->cbData, POPKCEL_ERROR);
                 free(sb);
-                return 0; //error只通知一次，收到通知后用户应自行destroy socket
+                return 0; // error只通知一次，收到通知后用户应自行destroy socket
             }
             else
                 free(sb);
@@ -264,9 +264,9 @@ static int sendToOutRedo(void* data, intptr_t ev)
     }
     else {
         while (sock->writeBuffer) {
-            struct Popkcel_SendToBuffer* sb = sock->writeBuffer;
+            struct Popkcel_SendToBuffer *sb = sock->writeBuffer;
             sock->writeBuffer = sb->next;
-            ssize_t r = sendto(sock->fd, sb->buffer, sb->bufLen, 0, (struct sockaddr*)&sb->addr, sb->addrLen);
+            ssize_t r = sendto(sock->fd, sb->buffer, sb->bufLen, 0, (struct sockaddr *)&sb->addr, sb->addrLen);
             if (r == -1) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
                     sock->writeBuffer = sb;
@@ -289,7 +289,7 @@ static int sendToOutRedo(void* data, intptr_t ev)
     return 0;
 }
 
-ssize_t popkcel_trySendto(struct Popkcel_Socket* sock, const char* buf, size_t len, struct sockaddr* addr, socklen_t addrLen, Popkcel_FuncCallback cb, void* data)
+ssize_t popkcel_trySendto(struct Popkcel_Socket *sock, const char *buf, size_t len, struct sockaddr *addr, socklen_t addrLen, Popkcel_FuncCallback cb, void *data)
 {
     ssize_t r = sendto(sock->fd, buf, len, 0, addr, addrLen);
     if (r == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
@@ -302,7 +302,7 @@ ssize_t popkcel_trySendto(struct Popkcel_Socket* sock, const char* buf, size_t l
             sock->so.outRedoData = sock;
         }
 
-        struct Popkcel_SendToBuffer* sb = malloc(sizeof(struct Popkcel_SendToBuffer) + len);
+        struct Popkcel_SendToBuffer *sb = malloc(sizeof(struct Popkcel_SendToBuffer) + len);
         memcpy(&sb->addr, addr, addrLen);
         sb->addrLen = addrLen;
         sb->bufLen = len;
@@ -310,9 +310,9 @@ ssize_t popkcel_trySendto(struct Popkcel_Socket* sock, const char* buf, size_t l
         sb->outCb = cb;
         sb->cbData = data;
         memcpy(sb->buffer, buf, len);
-        struct Popkcel_SendToBuffer** psb = (struct Popkcel_SendToBuffer**)&sock->writeBuffer;
+        struct Popkcel_SendToBuffer **psb = (struct Popkcel_SendToBuffer **)&sock->writeBuffer;
         while (*psb) {
-            psb = (struct Popkcel_SendToBuffer**)&(*psb)->next;
+            psb = (struct Popkcel_SendToBuffer **)&(*psb)->next;
         }
         *psb = sb;
         return POPKCEL_WOULDBLOCK;
@@ -321,9 +321,9 @@ ssize_t popkcel_trySendto(struct Popkcel_Socket* sock, const char* buf, size_t l
         return r;
 }
 
-static int readInRedo(void* data, intptr_t ev)
+static int readInRedo(void *data, intptr_t ev)
 {
-    struct Popkcel_Socket* sock = data;
+    struct Popkcel_Socket *sock = data;
     int retv;
     if (ev & POPKCEL_EVENT_IN) {
         ssize_t r = read(sock->fd, sock->rbuf, sock->rlen);
@@ -346,7 +346,7 @@ static int readInRedo(void* data, intptr_t ev)
     return 0;
 }
 
-ssize_t popkcel_tryRead(struct Popkcel_Socket* sock, char* buf, size_t len, Popkcel_FuncCallback cb, void* data)
+ssize_t popkcel_tryRead(struct Popkcel_Socket *sock, char *buf, size_t len, Popkcel_FuncCallback cb, void *data)
 {
     ELCHECKIFONSTACK(sock->loop, buf, "Do not allocate buffer on stack!");
     ssize_t r = read(sock->fd, buf, len);
@@ -366,9 +366,74 @@ ssize_t popkcel_tryRead(struct Popkcel_Socket* sock, char* buf, size_t len, Popk
         return r;
 }
 
-static int recvFromInRedo(void* data, intptr_t ev)
+static int readForInRedo(void *data, intptr_t ev)
 {
-    struct Popkcel_Socket* sock = data;
+    struct Popkcel_Socket *sock = data;
+    int retv;
+    if (ev & POPKCEL_EVENT_IN) {
+        ssize_t r;
+        for (;;) {
+            r = read(sock->fd, sock->rbuf, sock->rlen);
+            if (r >= 0 && r < sock->rlen) {
+                sock->rbuf += r;
+                sock->rlen += r;
+            }
+            else if (r == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                return 0;
+            }
+            else {
+                sock->so.inRedo = NULL;
+                if (sock->so.inCb) {
+                    retv = sock->so.inCb(sock->so.inCbData, r);
+                    if (retv)
+                        return retv;
+                }
+                break;
+            }
+        }
+    }
+
+    if (ev & POPKCEL_EVENT_ERROR) {
+        sock->so.inRedo = NULL;
+        if (sock->so.inCb) {
+            retv = sock->so.inCb(sock->so.inCbData, POPKCEL_ERROR);
+            if (retv)
+                return retv;
+        }
+    }
+    return 0;
+}
+
+ssize_t popkcel_tryReadFor(struct Popkcel_Socket *sock, char *buf, size_t len, Popkcel_FuncCallback cb, void *data)
+{
+    ELCHECKIFONSTACK(sock->loop, buf, "Do not allocate buffer on stack!");
+    ssize_t r;
+    for (;;) {
+        r = read(sock->fd, buf, len);
+        if (r >= 0 && r < len) {
+            buf += r;
+            len += r;
+        }
+        else if (r == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            if (sock->so.inRedo)
+                return POPKCEL_PENDING;
+
+            sock->so.inCb = cb;
+            sock->so.inCbData = data;
+            sock->so.inRedo = &readForInRedo;
+            sock->so.inRedoData = sock;
+            sock->rbuf = buf;
+            sock->rlen = len;
+            return POPKCEL_WOULDBLOCK;
+        }
+        else
+            return r;
+    }
+}
+
+static int recvFromInRedo(void *data, intptr_t ev)
+{
+    struct Popkcel_Socket *sock = data;
     int retv;
     if (ev & POPKCEL_EVENT_IN) {
         ssize_t r = recvfrom(sock->fd, sock->rbuf, sock->rlen, 0, sock->raddr, sock->raddrLen);
@@ -391,7 +456,7 @@ static int recvFromInRedo(void* data, intptr_t ev)
     return 0;
 }
 
-ssize_t popkcel_tryRecvfrom(struct Popkcel_Socket* sock, char* buf, size_t len, struct sockaddr* addr, socklen_t* addrLen, Popkcel_FuncCallback cb, void* data)
+ssize_t popkcel_tryRecvfrom(struct Popkcel_Socket *sock, char *buf, size_t len, struct sockaddr *addr, socklen_t *addrLen, Popkcel_FuncCallback cb, void *data)
 {
     ELCHECKIFONSTACK(sock->loop, buf, "Do not allocate buffer on stack!");
     ELCHECKIFONSTACK2(sock->loop, addr, "Do not allocate addr on stack!");
@@ -422,9 +487,9 @@ static void* runLoopCaller(void* data)
     return NULL;
 }
 */
-void popkcel_initListener(struct Popkcel_Listener* listener, struct Popkcel_Loop* loop, char ipv6, Popkcel_HandleType fd)
+void popkcel_initListener(struct Popkcel_Listener *listener, struct Popkcel_Loop *loop, char ipv6, Popkcel_HandleType fd)
 {
-    popkcel_initHandle((struct Popkcel_Handle*)listener, loop);
+    popkcel_initHandle((struct Popkcel_Handle *)listener, loop);
     if (fd)
         listener->fd = fd;
     else
@@ -434,17 +499,17 @@ void popkcel_initListener(struct Popkcel_Listener* listener, struct Popkcel_Loop
     fcntl(listener->fd, F_SETFL, f | O_NONBLOCK);
 }
 
-void popkcel_destroyListener(struct Popkcel_Listener* listener)
+void popkcel_destroyListener(struct Popkcel_Listener *listener)
 {
     if (listener->fd)
         close(listener->fd);
 }
 
-static int listenerCb(void* data, intptr_t ev)
+static int listenerCb(void *data, intptr_t ev)
 {
     if (ev & POPKCEL_EVENT_ERROR)
         return 0;
-    struct Popkcel_Listener* listener = data;
+    struct Popkcel_Listener *listener = data;
     if (listener->funcAccept) {
         struct sockaddr_in6 addr;
         socklen_t len;
@@ -454,9 +519,9 @@ static int listenerCb(void* data, intptr_t ev)
             len = sizeof(struct sockaddr_in);
 
         for (;;) {
-            int r = accept(listener->fd, (struct sockaddr*)&addr, &len);
+            int r = accept(listener->fd, (struct sockaddr *)&addr, &len);
             if (r >= 0)
-                listener->funcAccept(listener->funcAcceptData, r, (struct sockaddr*)&addr, len);
+                listener->funcAccept(listener->funcAcceptData, r, (struct sockaddr *)&addr, len);
             else {
                 break;
             }
@@ -465,13 +530,13 @@ static int listenerCb(void* data, intptr_t ev)
     return 0;
 }
 
-int popkcel_listen(struct Popkcel_Listener* listener, uint16_t port, int backlog)
+int popkcel_listen(struct Popkcel_Listener *listener, uint16_t port, int backlog)
 {
-    popkcel_bind((struct Popkcel_Socket*)listener, port);
+    popkcel_bind((struct Popkcel_Socket *)listener, port);
     if (listen(listener->fd, backlog))
         return POPKCEL_ERROR;
     else {
-        int r = popkcel_addHandle(listener->loop, (struct Popkcel_Handle*)listener, POPKCEL_EVENT_IN);
+        int r = popkcel_addHandle(listener->loop, (struct Popkcel_Handle *)listener, POPKCEL_EVENT_IN);
         if (r != POPKCEL_OK)
             return POPKCEL_ERROR;
         listener->so.inRedo = &listenerCb;
@@ -480,13 +545,13 @@ int popkcel_listen(struct Popkcel_Listener* listener, uint16_t port, int backlog
     }
 }
 
-void popkcel_initHandle(struct Popkcel_Handle* handle, struct Popkcel_Loop* loop)
+void popkcel_initHandle(struct Popkcel_Handle *handle, struct Popkcel_Loop *loop)
 {
     handle->loop = loop;
     memset(&handle->so, 0, sizeof(struct Popkcel_SingleOperation));
 }
 
-void popkcel_destroyLoop(struct Popkcel_Loop* loop)
+void popkcel_destroyLoop(struct Popkcel_Loop *loop)
 {
     /*struct Popkcel_Rbtnode* it = popkcel_rbtBegin(loop->timers);
     while (it) {
@@ -499,19 +564,19 @@ void popkcel_destroyLoop(struct Popkcel_Loop* loop)
     close(loop->loopFd);
 }
 
-int popkcel__invokeLoop(void* data, intptr_t rv)
+int popkcel__invokeLoop(void *data, intptr_t rv)
 {
     (void)data;
     (void)rv;
     return 0;
 }
 
-void* popkcel_dlopen(const char* fileName)
+void *popkcel_dlopen(const char *fileName)
 {
     return dlopen(fileName, RTLD_LAZY);
 }
 
-int popkcel_dlclose(void* handle)
+int popkcel_dlclose(void *handle)
 {
     if (!dlclose(handle))
         return POPKCEL_OK;
@@ -519,7 +584,7 @@ int popkcel_dlclose(void* handle)
         return POPKCEL_ERROR;
 }
 
-void* popkcel_dlsym(void* handle, const char* symbol)
+void *popkcel_dlsym(void *handle, const char *symbol)
 {
     return dlsym(handle, symbol);
 }

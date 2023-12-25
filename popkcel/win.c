@@ -351,6 +351,16 @@ ssize_t popkcel_tryRead(struct Popkcel_Socket* sock, char* buf, size_t len, Popk
     return setOl(r == TRUE ? (ssize_t)br : -1, cb, data, ic, sock);
 }
 
+ssize_t popkcel_tryReadFor(struct Popkcel_Socket* sock, char* buf, size_t len, Popkcel_FuncCallback cb, void* data)
+{
+    ELCHECKIFONSTACK(sock->loop, buf, "Do not allocate buffer on stack!");
+    struct Popkcel_IocpCallback* ic = malloc(sizeof(struct Popkcel_IocpCallback));
+    initIocpCallback(ic);
+    DWORD br;
+    BOOL r = ReadFile(sock->fd, buf, (DWORD)len, &br, (LPOVERLAPPED)ic);
+    return setOl(r == TRUE ? (ssize_t)br : -1, cb, data, ic, sock);
+}
+
 struct RFS
 {
     struct Popkcel_IocpCallback ic;

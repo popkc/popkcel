@@ -646,9 +646,7 @@ static int makeReplyBuffer(struct Popkcel_PsrField* psr, char* buf, int bufLen)
 
     if (sid >= 0 && !it) { // 遍历完成
         if (sid == lid) {
-            if (ids)
-                addSingle(&ids, &bufLen, pos, (uint32_t)sid);
-            else { // 最常见的情况，所以单独写一下
+            if (!ids) { // 最常见的情况，所以单独写一下
                 buf[pos] = (POPKCEL_PF_REPLY | POPKCEL_PF_TRANSFORM | POPKCEL_PF_SINGLE);
                 pos++;
                 buf[pos] = 1;
@@ -657,6 +655,8 @@ static int makeReplyBuffer(struct Popkcel_PsrField* psr, char* buf, int bufLen)
                 memcpy(buf + pos, &ul, 4);
                 pos += 4;
             }
+            else
+                addSingle(&ids, &bufLen, pos, (uint32_t)sid);
         }
         else
             addRange((uint32_t)sid, (uint32_t)lid, buf, &pos);

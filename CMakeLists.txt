@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.1)
 project(popkcel)
 
 cmake_policy(SET CMP0003 NEW)
@@ -29,7 +29,7 @@ endif()
 ]]
 
 option(PSR "用UDP模拟TCP功能" OFF)
-option(FAKESYNC "伪同步功能" OFF)
+option(FAKESYNC "伪同步功能" ON)
 
 include(custom.txt OPTIONAL)
 
