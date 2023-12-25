@@ -272,13 +272,13 @@ static int overlappedCommonCb(void* data, intptr_t rv)
     return 0;
 }
 
-static ssize_t setOl(ssize_t r, Popkcel_FuncCallback cb, void* data, struct Popkcel_IocpCallback* ic, struct Popkcel_Socket* so)
+static ssize_t setOl(ssize_t r, Popkcel_FuncCallback cb, void* data, struct Popkcel_IocpCallback* ic, struct Popkcel_Socket* so, Popkcel_FuncCallback olcb)
 {
     ssize_t rv;
     if (r < 0) {
         int err = WSAGetLastError();
         if (err == ERROR_IO_PENDING) {
-            ic->funcCb = &overlappedCommonCb;
+            ic->funcCb = olcb;
             ic->cbData = ic;
             ic->funcCb2 = cb;
             ic->cbData2 = data;
@@ -314,18 +314,62 @@ int popkcel_tryConnect(struct Popkcel_Socket* sock, struct sockaddr* addr, sockl
     struct Popkcel_IocpCallback* ic = malloc(sizeof(struct Popkcel_IocpCallback));
     initIocpCallback(ic);
     BOOL r = globalVars->ConnectEx((SOCKET)sock->fd, addr, len, NULL, 0, NULL, (LPOVERLAPPED)ic);
-    return (int)setOl(r == TRUE ? POPKCEL_OK : -1, cb, data, ic, sock);
+    return (int)setOl(r == TRUE ? POPKCEL_OK : -1, cb, data, ic, sock, &overlappedCommonCb);
+}
+
+struct Popkcel_ICWrite
+{
+    struct Popkcel_IocpCallback ic;
+    uint32_t len, pos;
+    char buffer[];
+};
+
+static int overlappedWriteCb(void* data, intptr_t rv)
+{
+    struct Popkcel_ICWrite* ic = data;
+    struct Popkcel_IocpCallback** ic2 = &ic->ic.sock->ic;
+    while (*ic2) {
+        if (*ic2 == &ic->ic) {
+            *ic2 = ic->ic.next;
+            break;
+        }
+        ic2 = &(*ic2)->next;
+    }
+
+    ssize_t len = popkcel_threadLoop->numOfBytes;
+    struct Popkcel_Socket* sock = ic->ic.sock;
+    if (popkcel_threadLoop->numOfBytes < ic->len) {
+        ic->pos += len;
+        ic->len -= len;
+        len = popkcel_tryWrite(sock, ic->buffer + ic->pos, ic->len, ic->ic.funcCb2, ic->ic.cbData2);
+        if (len < 0) // 此时剩余的步骤已在tryWrite完成，只有返回非负数时才需要手动调用回调函数
+            return 0;
+    }
+
+    if (ic->ic.funcCb2)
+        ic->ic.funcCb2(ic->ic.cbData2, rv < 0 ? POPKCEL_ERROR : len);
+    return 0;
 }
 
 ssize_t popkcel_tryWrite(struct Popkcel_Socket* sock, const char* buf, size_t len, Popkcel_FuncCallback cb, void* data)
 {
-    struct Popkcel_IocpCallback* ic = malloc(sizeof(struct Popkcel_IocpCallback) + len);
-    char* nbuf = (char*)ic + sizeof(struct Popkcel_IocpCallback);
-    memcpy(nbuf, buf, len);
-    initIocpCallback(ic);
+    struct Popkcel_ICWrite* ic = malloc(sizeof(struct Popkcel_ICWrite) + len);
+    ic->pos = 0;
+    ic->len = len;
+    memcpy(ic->buffer, buf, len);
+    initIocpCallback(&ic->ic);
     DWORD bw;
-    BOOL r = WriteFile(sock->fd, nbuf, (DWORD)len, &bw, (LPOVERLAPPED)ic);
-    return setOl(r >= 0 ? (ssize_t)bw : -1, cb, data, ic, sock);
+    BOOL r;
+    for (;;) {
+        r = WriteFile(sock->fd, ic->buffer + ic->pos, ic->len, &bw, (LPOVERLAPPED)ic);
+        if (r && bw < ic->len) {
+            ic->pos += r;
+            ic->len -= r;
+        }
+        else
+            break;
+    }
+    return setOl(r >= 0 ? (ssize_t)bw : -1, cb, data, &ic->ic, sock, &overlappedWriteCb);
 }
 
 ssize_t popkcel_trySendto(struct Popkcel_Socket* sock, const char* buf, size_t len, struct sockaddr* addr, socklen_t addrLen, Popkcel_FuncCallback cb, void* data)
@@ -338,7 +382,7 @@ ssize_t popkcel_trySendto(struct Popkcel_Socket* sock, const char* buf, size_t l
     memcpy(wb->buf, buf, len);
     DWORD bw;
     int r = WSASendTo((SOCKET)sock->fd, wb, 1, &bw, 0, addr, addrLen, (LPOVERLAPPED)ic, NULL);
-    return setOl(r == 0 ? (ssize_t)bw : -1, cb, data, ic, sock);
+    return setOl(r == 0 ? (ssize_t)bw : -1, cb, data, ic, sock, &overlappedCommonCb);
 }
 
 ssize_t popkcel_tryRead(struct Popkcel_Socket* sock, char* buf, size_t len, Popkcel_FuncCallback cb, void* data)
@@ -348,7 +392,33 @@ ssize_t popkcel_tryRead(struct Popkcel_Socket* sock, char* buf, size_t len, Popk
     initIocpCallback(ic);
     DWORD br;
     BOOL r = ReadFile(sock->fd, buf, (DWORD)len, &br, (LPOVERLAPPED)ic);
-    return setOl(r == TRUE ? (ssize_t)br : -1, cb, data, ic, sock);
+    return setOl(r == TRUE ? (ssize_t)br : -1, cb, data, ic, sock, &overlappedCommonCb);
+}
+
+static int overlappedReadForCb(void* data, intptr_t rv)
+{
+    struct Popkcel_IocpCallback* ic = data;
+    struct Popkcel_IocpCallback** ic2 = &ic->sock->ic;
+    while (*ic2) {
+        if (*ic2 == ic) {
+            *ic2 = ic->next;
+            break;
+        }
+        ic2 = &(*ic2)->next;
+    }
+
+    ssize_t len = popkcel_threadLoop->numOfBytes;
+    if (popkcel_threadLoop->numOfBytes < ic->sock->rlen) {
+        ic->sock->rbuf += len;
+        ic->sock->rlen -= len;
+        len = popkcel_tryReadFor(ic->sock, ic->sock->rbuf, ic->sock->rlen, ic->funcCb2, ic->cbData2);
+        if (len < 0) // 此时剩余的步骤已在tryReadFor完成，只有返回非负数时才需要手动调用回调函数
+            return 0;
+    }
+
+    if (ic->funcCb2)
+        ic->funcCb2(ic->cbData2, rv < 0 ? POPKCEL_ERROR : len);
+    return 0;
 }
 
 ssize_t popkcel_tryReadFor(struct Popkcel_Socket* sock, char* buf, size_t len, Popkcel_FuncCallback cb, void* data)
@@ -357,8 +427,20 @@ ssize_t popkcel_tryReadFor(struct Popkcel_Socket* sock, char* buf, size_t len, P
     struct Popkcel_IocpCallback* ic = malloc(sizeof(struct Popkcel_IocpCallback));
     initIocpCallback(ic);
     DWORD br;
-    BOOL r = ReadFile(sock->fd, buf, (DWORD)len, &br, (LPOVERLAPPED)ic);
-    return setOl(r == TRUE ? (ssize_t)br : -1, cb, data, ic, sock);
+    BOOL r;
+    for (;;) {
+        r = ReadFile(sock->fd, buf, (DWORD)len, &br, (LPOVERLAPPED)ic);
+        if (r && br < len) {
+            buf += br;
+            len -= br;
+        }
+        else {
+            sock->rbuf = buf;
+            sock->rlen = len;
+            break;
+        }
+    }
+    return setOl(r == TRUE ? (ssize_t)br : -1, cb, data, ic, sock, &overlappedReadForCb);
 }
 
 struct RFS
@@ -380,7 +462,7 @@ ssize_t popkcel_tryRecvfrom(struct Popkcel_Socket* sock, char* buf, size_t len, 
     rfs->flag = 0;
     DWORD br;
     int r = WSARecvFrom((SOCKET)sock->fd, &rfs->wb, 1, &br, &rfs->flag, addr, addrLen, (LPOVERLAPPED)rfs, NULL);
-    return setOl(r == 0 ? (ssize_t)br : -1, cb, data, &rfs->ic, sock);
+    return setOl(r == 0 ? (ssize_t)br : -1, cb, data, &rfs->ic, sock, &overlappedCommonCb);
 }
 
 void popkcel_destroyListener(struct Popkcel_Listener* listener)
