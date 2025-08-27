@@ -8,6 +8,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 */
 
 #include "popkcel.h"
+#include "popkcel_private.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -20,7 +21,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 #include <sys/event.h>
 
-static int translateEvent(struct kevent* kev)
+static int translateEvent(struct kevent *kev)
 {
     int flag;
     if (kev->filter == EVFILT_READ)
@@ -35,14 +36,14 @@ static int translateEvent(struct kevent* kev)
     return flag;
 }
 
-static void makeTimespec(struct timespec* ts, int ms)
+static void makeTimespec(struct timespec *ts, int ms)
 {
     div_t dt = div(ms, 1000);
     ts->tv_sec = dt.quot;
     ts->tv_nsec = dt.rem * 1000000;
 }
 
-void popkcel_initLoop(struct Popkcel_Loop* loop, size_t maxEvents)
+void popkcel_initLoop(struct Popkcel_Loop *loop, size_t maxEvents)
 {
     loop->running = 0;
     loop->loopFd = kqueue();
@@ -54,7 +55,7 @@ void popkcel_initLoop(struct Popkcel_Loop* loop, size_t maxEvents)
     loop->timers = NULL;
 }
 
-int popkcel_addHandle(struct Popkcel_Loop* loop, struct Popkcel_Handle* handle, int ev)
+int popkcel_addHandle(struct Popkcel_Loop *loop, struct Popkcel_Handle *handle, int ev)
 {
     struct kevent kev;
     int r;
@@ -89,18 +90,18 @@ int popkcel_addHandle(struct Popkcel_Loop* loop, struct Popkcel_Handle* handle, 
     return r;
 }
 
-int popkcel_removeHandle(struct Popkcel_Loop* loop, struct Popkcel_Handle* handle)
+int popkcel_removeHandle(struct Popkcel_Loop *loop, struct Popkcel_Handle *handle)
 {
     struct kevent kev;
     EV_SET(&kev, handle->fd, 0, EV_DELETE, 0, 0, NULL);
     return kevent(loop->loopFd, &kev, 1, NULL, 0, NULL);
 }
 
-int popkcel_runLoop(struct Popkcel_Loop* loop)
+int popkcel_runLoop(struct Popkcel_Loop *loop)
 {
 #ifndef POPKCEL_NOFAKESYNC
     volatile char stackPos;
-    loop->stackPos = (char*)&stackPos;
+    loop->stackPos = (char *)&stackPos;
 #endif
     popkcel_threadLoop = loop;
     loop->inited = 0;
@@ -131,9 +132,9 @@ int popkcel_runLoop(struct Popkcel_Loop* loop)
             break;
 
         while (loop->curIndex < loop->numOfEvents) {
-            struct kevent* kev = &loop->events[loop->curIndex];
+            struct kevent *kev = &loop->events[loop->curIndex];
             if (kev->filter == EVFILT_USER || kev->filter == EVFILT_TIMER) {
-                struct Popkcel_Handle* handle = (struct Popkcel_Handle*)kev->ident;
+                struct Popkcel_Handle *handle = (struct Popkcel_Handle *)kev->ident;
                 if (handle && handle->so.inRedo) {
                     handle->so.inRedo(handle->so.inRedoData, (kev->flags & (EV_EOF | EV_ERROR)) ? POPKCEL_ERROR : POPKCEL_OK);
                 }
@@ -142,44 +143,47 @@ int popkcel_runLoop(struct Popkcel_Loop* loop)
                 int event = translateEvent(kev);
                 popkcel__eventCall(kev->udata, event);
             }
+
+            if (!loop->running)
+                return 0;
             loop->curIndex++;
         }
     }
     return 0;
 }
 
-void popkcel_initNotifier(struct Popkcel_Notifier* notifier, struct Popkcel_Loop* loop)
+void popkcel_initNotifier(struct Popkcel_Notifier *notifier, struct Popkcel_Loop *loop)
 {
-    popkcel_initHandle((struct Popkcel_Handle*)notifier, loop);
-    popkcel_addHandle(loop, (struct Popkcel_Handle*)notifier, POPKCEL_EVENT_USER | POPKCEL_EVENT_EDGE);
+    popkcel_initHandle((struct Popkcel_Handle *)notifier, loop);
+    popkcel_addHandle(loop, (struct Popkcel_Handle *)notifier, POPKCEL_EVENT_USER | POPKCEL_EVENT_EDGE);
 }
 
-int popkcel_notifierNotify(struct Popkcel_Notifier* notifier)
+int popkcel_notifierNotify(struct Popkcel_Notifier *notifier)
 {
     struct kevent kev;
     EV_SET(&kev, (uintptr_t)notifier, EVFILT_USER, 0, NOTE_TRIGGER, 0, NULL);
     return kevent(notifier->loop->loopFd, &kev, 1, NULL, 0, NULL);
 }
 
-void popkcel_notifierSetCb(struct Popkcel_Notifier* notifier, Popkcel_FuncCallback cb, void* data)
+void popkcel_notifierSetCb(struct Popkcel_Notifier *notifier, Popkcel_FuncCallback cb, void *data)
 {
     notifier->so.inRedo = cb;
     notifier->so.inRedoData = data;
 }
 
-void popkcel_destroyNotifier(struct Popkcel_Notifier* notifier)
+void popkcel_destroyNotifier(struct Popkcel_Notifier *notifier)
 {
     struct kevent kev;
     EV_SET(&kev, (uintptr_t)notifier, EVFILT_USER, EV_DELETE, NOTE_FFNOP, 0, NULL);
     kevent(notifier->loop->loopFd, &kev, 1, NULL, 0, NULL);
 }
 
-void popkcel_initSysTimer(struct Popkcel_SysTimer* sysTimer, struct Popkcel_Loop* loop)
+void popkcel_initSysTimer(struct Popkcel_SysTimer *sysTimer, struct Popkcel_Loop *loop)
 {
-    popkcel_initHandle((struct Popkcel_Handle*)sysTimer, loop);
+    popkcel_initHandle((struct Popkcel_Handle *)sysTimer, loop);
 }
 
-void popkcel_setSysTimer(struct Popkcel_SysTimer* sysTimer, unsigned int timeout, char periodic, Popkcel_FuncCallback cb, void* data)
+void popkcel_setSysTimer(struct Popkcel_SysTimer *sysTimer, unsigned int timeout, char periodic, Popkcel_FuncCallback cb, void *data)
 {
     struct kevent kev;
     uint16_t flag = EV_ADD | EV_CLEAR;
@@ -191,7 +195,7 @@ void popkcel_setSysTimer(struct Popkcel_SysTimer* sysTimer, unsigned int timeout
     kevent(sysTimer->loop->loopFd, &kev, 1, NULL, 0, NULL);
 }
 
-void popkcel_stopSysTimer(struct Popkcel_SysTimer* sysTimer)
+void popkcel_stopSysTimer(struct Popkcel_SysTimer *sysTimer)
 {
     struct kevent kev;
     EV_SET(&kev, (uintptr_t)sysTimer, EVFILT_TIMER, EV_DELETE, 0, 0, NULL);
@@ -199,7 +203,7 @@ void popkcel_stopSysTimer(struct Popkcel_SysTimer* sysTimer)
     sysTimer->so.inRedo = NULL;
 }
 
-void popkcel_destroySysTimer(struct Popkcel_SysTimer* sysTimer)
+void popkcel_destroySysTimer(struct Popkcel_SysTimer *sysTimer)
 {
     popkcel_stopSysTimer(sysTimer);
 }

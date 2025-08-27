@@ -1,13 +1,5 @@
-﻿/*
-Copyright (C) 2020-2023 popkc(popkc at 163 dot com)
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
 /*
-Copyright (C) 2020-2022 popkc(popkc at 163 dot com)
+Copyright (C) 2020-2023 popkc(popkc at 163 dot com)
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
@@ -16,6 +8,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 */
 
 #include "popkcel.h"
+#include "popkcel_private.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -23,12 +16,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 #include <string.h>
 
 POPKCEL_THREADLOCAL struct Popkcel_Loop *popkcel_threadLoop;
-struct Popkcel_GlobalVar *popkcel_globalVar;
+struct Popkcel_GlobalVar popkcel_globalVar;
 
 uint32_t popkcel__rand()
 {
-    uint32_t r = popkcel_globalVar->seed * 48271 % 2147483647;
-    popkcel_globalVar->seed = r;
+    uint32_t r = popkcel_globalVar.seed * 48271 % 2147483647;
+    popkcel_globalVar.seed = r;
     if (popkcel_getCurrentTime() & 1)
         r |= 0x80000000UL;
     return r;
@@ -111,7 +104,7 @@ struct sockaddr_in popkcel_addressI(uint32_t ip, uint16_t port)
     struct sockaddr_in addr;
     addr.sin_port = htons(port);
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = ip;
+    addr.sin_addr.s_addr = htonl(ip);
     return addr;
 }
 
@@ -140,7 +133,8 @@ int popkcel_address6(struct sockaddr_in6 *addr, const char *ip, uint16_t port)
 static int oneShotCb(void *data, intptr_t rv)
 {
     struct Popkcel_OneShot *os = data;
-    os->cb(os->data, rv);
+    if (os->cb)
+        os->cb(os->data, rv);
     popkcel_destroyNotifier(data);
     free(os);
     return 1;
@@ -605,8 +599,13 @@ int popkcel_bind(struct Popkcel_Socket *sock, uint16_t port)
 
 void popkcel__globalInit()
 {
-    popkcel_globalVar = malloc(sizeof(struct Popkcel_GlobalVar));
-    popkcel_globalVar->seed = (uint32_t)popkcel_getCurrentTime();
-    popkcel_globalVar->tempAddr = popkcel_addressI(0x8080804, 1234);
-    popkcel_address6(&popkcel_globalVar->tempAddr6, "2001:4860:4860::8844", 1234);
+    popkcel_globalVar.seed = (uint32_t)popkcel_getCurrentTime();
+    popkcel_globalVar.tempAddr = popkcel_addressI(0x8080804, 1234);
+    popkcel_address6(&popkcel_globalVar.tempAddr6, "2001:4860:4860::8844", 1234);
+}
+
+void popkcel_stopLoop(struct Popkcel_Loop *loop)
+{
+    loop->running = 0;
+    popkcel_oneShotCallback(loop, NULL, NULL);
 }

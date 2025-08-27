@@ -8,6 +8,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 */
 
 #include "popkcel.h"
+#include "popkcel_private.h"
 
 #include <MSWSock.h>
 #include <assert.h>
@@ -19,19 +20,19 @@ struct GlobalVars
     LPFN_ACCEPTEX AcceptEx;
     LPFN_GETACCEPTEXSOCKADDRS GetAcceptExSockaddrs;
 };
-static struct GlobalVars* globalVars;
+static struct GlobalVars globalVars;
 
-void popkcel_initHandle(struct Popkcel_Handle* handle, struct Popkcel_Loop* loop)
+void popkcel_initHandle(struct Popkcel_Handle *handle, struct Popkcel_Loop *loop)
 {
     handle->loop = loop;
 }
 
-static inline void initIocpCallback(struct Popkcel_IocpCallback* iocp)
+static inline void initIocpCallback(struct Popkcel_IocpCallback *iocp)
 {
     memset(iocp, 0, sizeof(struct Popkcel_IocpCallback));
 }
 
-void popkcel_initLoop(struct Popkcel_Loop* loop, size_t maxEvents)
+void popkcel_initLoop(struct Popkcel_Loop *loop, size_t maxEvents)
 {
     loop->running = 0;
     loop->timers = NULL;
@@ -40,7 +41,7 @@ void popkcel_initLoop(struct Popkcel_Loop* loop, size_t maxEvents)
     loop->curOverlapped = NULL;
 }
 
-void popkcel_destroyLoop(struct Popkcel_Loop* loop)
+void popkcel_destroyLoop(struct Popkcel_Loop *loop)
 {
     /*struct Popkcel_Rbtnode* it = popkcel_rbtBegin(loop->timers);
     while (it) {
@@ -54,11 +55,11 @@ void popkcel_destroyLoop(struct Popkcel_Loop* loop)
     CloseHandle(loop->loopFd);
 }
 
-int popkcel_runLoop(struct Popkcel_Loop* loop)
+int popkcel_runLoop(struct Popkcel_Loop *loop)
 {
 #ifndef POPKCEL_NOFAKESYNC
     volatile char stackPos;
-    loop->stackPos = (char*)&stackPos;
+    loop->stackPos = (char *)&stackPos;
 #endif
     popkcel_threadLoop = loop;
     loop->running = 1;
@@ -70,15 +71,15 @@ int popkcel_runLoop(struct Popkcel_Loop* loop)
 
     while (loop->running) {
         int r = popkcel__checkTimers();
-        struct Popkcel_IocpCallback* ol;
-        r = GetQueuedCompletionStatus(loop->loopFd, &loop->numOfBytes, &loop->completionKey, (LPOVERLAPPED*)&ol, r == -1 ? INFINITE : r);
+        struct Popkcel_IocpCallback *ol;
+        r = GetQueuedCompletionStatus(loop->loopFd, &loop->numOfBytes, &loop->completionKey, (LPOVERLAPPED *)&ol, r == -1 ? INFINITE : r);
         if (ol) {
             if (loop->curOverlapped)
                 free(loop->curOverlapped);
             loop->curOverlapped = ol;
 
             if (ol->sock) {
-                struct Popkcel_IocpCallback** ic = &ol->sock->ic;
+                struct Popkcel_IocpCallback **ic = &ol->sock->ic;
                 while (*ic) {
                     if (*ic == ol) {
                         *ic = ol->next;
@@ -98,7 +99,7 @@ int popkcel_runLoop(struct Popkcel_Loop* loop)
     return 0;
 }
 
-int popkcel_addHandle(struct Popkcel_Loop* loop, struct Popkcel_Handle* handle, int ev)
+int popkcel_addHandle(struct Popkcel_Loop *loop, struct Popkcel_Handle *handle, int ev)
 {
     if (CreateIoCompletionPort(handle->fd, loop->loopFd, (ULONG_PTR)handle, 0))
         return POPKCEL_OK;
@@ -106,28 +107,28 @@ int popkcel_addHandle(struct Popkcel_Loop* loop, struct Popkcel_Handle* handle, 
         return POPKCEL_ERROR;
 }
 
-int popkcel_removeHandle(struct Popkcel_Loop* loop, struct Popkcel_Handle* handle)
+int popkcel_removeHandle(struct Popkcel_Loop *loop, struct Popkcel_Handle *handle)
 {
     return POPKCEL_ERROR;
 }
 
-void popkcel_initNotifier(struct Popkcel_Notifier* notifier, struct Popkcel_Loop* loop)
+void popkcel_initNotifier(struct Popkcel_Notifier *notifier, struct Popkcel_Loop *loop)
 {
     // popkcel_initHandle((struct Popkcel_Handle*)notifier, loop);
     notifier->loop = loop;
 }
 
-static int notifierCb(void* data, intptr_t rv)
+static int notifierCb(void *data, intptr_t rv)
 {
-    struct Popkcel_Notifier* notifier = data;
+    struct Popkcel_Notifier *notifier = data;
     if (notifier->funcCb)
         notifier->funcCb(notifier->cbData, rv);
     return 0;
 }
 
-int popkcel_notifierNotify(struct Popkcel_Notifier* notifier)
+int popkcel_notifierNotify(struct Popkcel_Notifier *notifier)
 {
-    struct Popkcel_IocpCallback* ic = malloc(sizeof(struct Popkcel_IocpCallback));
+    struct Popkcel_IocpCallback *ic = malloc(sizeof(struct Popkcel_IocpCallback));
     initIocpCallback(ic);
     ic->funcCb = &notifierCb;
     ic->cbData = notifier;
@@ -137,31 +138,31 @@ int popkcel_notifierNotify(struct Popkcel_Notifier* notifier)
         return POPKCEL_ERROR;
 }
 
-void popkcel_notifierSetCb(struct Popkcel_Notifier* notifier, Popkcel_FuncCallback cb, void* data)
+void popkcel_notifierSetCb(struct Popkcel_Notifier *notifier, Popkcel_FuncCallback cb, void *data)
 {
     notifier->funcCb = cb;
     notifier->cbData = data;
 }
 
-void popkcel_destroyNotifier(struct Popkcel_Notifier* notifier)
+void popkcel_destroyNotifier(struct Popkcel_Notifier *notifier)
 {
     // destroyHandle((struct Popkcel_Handle*)notifier);
 }
 
 static VOID CALLBACK sysTimerCb(PVOID data, BOOLEAN fired)
 {
-    struct Popkcel_SysTimer* st = (struct Popkcel_SysTimer*)data;
+    struct Popkcel_SysTimer *st = (struct Popkcel_SysTimer *)data;
     if (st->funcCb)
         st->funcCb(st->cbData, POPKCEL_OK);
 }
 
-void popkcel_initSysTimer(struct Popkcel_SysTimer* sysTimer, struct Popkcel_Loop* loop)
+void popkcel_initSysTimer(struct Popkcel_SysTimer *sysTimer, struct Popkcel_Loop *loop)
 {
     sysTimer->loop = loop;
     sysTimer->fd = 0;
 }
 
-void popkcel_setSysTimer(struct Popkcel_SysTimer* sysTimer, unsigned int timeout, char periodic, Popkcel_FuncCallback cb, void* data)
+void popkcel_setSysTimer(struct Popkcel_SysTimer *sysTimer, unsigned int timeout, char periodic, Popkcel_FuncCallback cb, void *data)
 {
     popkcel_stopSysTimer(sysTimer);
     sysTimer->funcCb = cb;
@@ -169,7 +170,7 @@ void popkcel_setSysTimer(struct Popkcel_SysTimer* sysTimer, unsigned int timeout
     CreateTimerQueueTimer(&sysTimer->fd, NULL, sysTimerCb, sysTimer, timeout, periodic ? timeout : 0, WT_EXECUTEINTIMERTHREAD);
 }
 
-void popkcel_stopSysTimer(struct Popkcel_SysTimer* sysTimer)
+void popkcel_stopSysTimer(struct Popkcel_SysTimer *sysTimer)
 {
     if (sysTimer->fd) {
         DeleteTimerQueueTimer(NULL, sysTimer->fd, NULL);
@@ -177,7 +178,7 @@ void popkcel_stopSysTimer(struct Popkcel_SysTimer* sysTimer)
     }
 }
 
-void popkcel_destroySysTimer(struct Popkcel_SysTimer* sysTimer)
+void popkcel_destroySysTimer(struct Popkcel_SysTimer *sysTimer)
 {
     popkcel_stopSysTimer(sysTimer);
 }
@@ -187,22 +188,21 @@ int popkcel_init()
     WSADATA wd;
     if (WSAStartup(MAKEWORD(2, 2), &wd))
         return 1;
-    globalVars = malloc(sizeof(struct GlobalVars));
     DWORD numBytes;
     SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
     {
         GUID guid = WSAID_CONNECTEX;
-        if (WSAIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, &guid, sizeof(guid), &globalVars->ConnectEx, sizeof(globalVars->ConnectEx), &numBytes, NULL, NULL))
+        if (WSAIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, &guid, sizeof(guid), &globalVars.ConnectEx, sizeof(globalVars.ConnectEx), &numBytes, NULL, NULL))
             return 2;
     }
     {
         GUID guid = WSAID_ACCEPTEX;
-        if (WSAIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, &guid, sizeof(guid), &globalVars->AcceptEx, sizeof(globalVars->AcceptEx), &numBytes, NULL, NULL))
+        if (WSAIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, &guid, sizeof(guid), &globalVars.AcceptEx, sizeof(globalVars.AcceptEx), &numBytes, NULL, NULL))
             return 3;
     }
     {
         GUID guid = WSAID_GETACCEPTEXSOCKADDRS;
-        if (WSAIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, &guid, sizeof(guid), &globalVars->GetAcceptExSockaddrs, sizeof(globalVars->GetAcceptExSockaddrs), &numBytes, NULL, NULL))
+        if (WSAIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, &guid, sizeof(guid), &globalVars.GetAcceptExSockaddrs, sizeof(globalVars.GetAcceptExSockaddrs), &numBytes, NULL, NULL))
             return 4;
     }
     closesocket(s);
@@ -226,7 +226,7 @@ int popkcel_closeSocket(Popkcel_HandleType fd)
         return POPKCEL_ERROR;
 }
 
-int popkcel_initSocket(struct Popkcel_Socket* sock, struct Popkcel_Loop* loop, int socketType, Popkcel_HandleType fd)
+int popkcel_initSocket(struct Popkcel_Socket *sock, struct Popkcel_Loop *loop, int socketType, Popkcel_HandleType fd)
 {
     sock->loop = loop;
     sock->ic = NULL;
@@ -239,12 +239,12 @@ int popkcel_initSocket(struct Popkcel_Socket* sock, struct Popkcel_Loop* loop, i
             (socketType & POPKCEL_SOCKETTYPE_TCP) ? SOCK_STREAM : SOCK_DGRAM,
             0, NULL, 0, WSA_FLAG_OVERLAPPED);
     }
-    return popkcel_addHandle(loop, (struct Popkcel_Handle*)sock, 0);
+    return popkcel_addHandle(loop, (struct Popkcel_Handle *)sock, 0);
 }
 
-void popkcel_destroySocket(struct Popkcel_Socket* sock)
+void popkcel_destroySocket(struct Popkcel_Socket *sock)
 {
-    struct Popkcel_IocpCallback* ic = sock->ic;
+    struct Popkcel_IocpCallback *ic = sock->ic;
     while (ic) {
         ic->funcCb = NULL;
         ic->sock = NULL;
@@ -255,10 +255,10 @@ void popkcel_destroySocket(struct Popkcel_Socket* sock)
         closesocket((SOCKET)sock->fd);
 }
 
-static int overlappedCommonCb(void* data, intptr_t rv)
+static int overlappedCommonCb(void *data, intptr_t rv)
 {
-    struct Popkcel_IocpCallback* ic = data;
-    struct Popkcel_IocpCallback** ic2 = &ic->sock->ic;
+    struct Popkcel_IocpCallback *ic = data;
+    struct Popkcel_IocpCallback **ic2 = &ic->sock->ic;
     while (*ic2) {
         if (*ic2 == ic) {
             *ic2 = ic->next;
@@ -272,7 +272,7 @@ static int overlappedCommonCb(void* data, intptr_t rv)
     return 0;
 }
 
-static ssize_t setOl(ssize_t r, Popkcel_FuncCallback cb, void* data, struct Popkcel_IocpCallback* ic, struct Popkcel_Socket* so, Popkcel_FuncCallback olcb)
+static ssize_t setOl(ssize_t r, Popkcel_FuncCallback cb, void *data, struct Popkcel_IocpCallback *ic, struct Popkcel_Socket *so, Popkcel_FuncCallback olcb)
 {
     ssize_t rv;
     if (r < 0) {
@@ -297,23 +297,23 @@ static ssize_t setOl(ssize_t r, Popkcel_FuncCallback cb, void* data, struct Popk
     return rv;
 }
 
-int popkcel_tryConnect(struct Popkcel_Socket* sock, struct sockaddr* addr, socklen_t len, Popkcel_FuncCallback cb, void* data)
+int popkcel_tryConnect(struct Popkcel_Socket *sock, struct sockaddr *addr, socklen_t len, Popkcel_FuncCallback cb, void *data)
 {
     if (sock->ipv6) {
         struct sockaddr_in6 sa;
         memset(&sa, 0, sizeof(sa));
         sa.sin6_family = AF_INET6;
-        bind((SOCKET)sock->fd, (struct sockaddr*)&sa, sizeof(sa));
+        bind((SOCKET)sock->fd, (struct sockaddr *)&sa, sizeof(sa));
     }
     else {
         struct sockaddr_in sa;
         memset(&sa, 0, sizeof(sa));
         sa.sin_family = AF_INET;
-        bind((SOCKET)sock->fd, (struct sockaddr*)&sa, sizeof(sa));
+        bind((SOCKET)sock->fd, (struct sockaddr *)&sa, sizeof(sa));
     }
-    struct Popkcel_IocpCallback* ic = malloc(sizeof(struct Popkcel_IocpCallback));
+    struct Popkcel_IocpCallback *ic = malloc(sizeof(struct Popkcel_IocpCallback));
     initIocpCallback(ic);
-    BOOL r = globalVars->ConnectEx((SOCKET)sock->fd, addr, len, NULL, 0, NULL, (LPOVERLAPPED)ic);
+    BOOL r = globalVars.ConnectEx((SOCKET)sock->fd, addr, len, NULL, 0, NULL, (LPOVERLAPPED)ic);
     return (int)setOl(r == TRUE ? POPKCEL_OK : -1, cb, data, ic, sock, &overlappedCommonCb);
 }
 
@@ -324,10 +324,10 @@ struct Popkcel_ICWrite
     char buffer[];
 };
 
-static int overlappedWriteCb(void* data, intptr_t rv)
+static int overlappedWriteCb(void *data, intptr_t rv)
 {
-    struct Popkcel_ICWrite* ic = data;
-    struct Popkcel_IocpCallback** ic2 = &ic->ic.sock->ic;
+    struct Popkcel_ICWrite *ic = data;
+    struct Popkcel_IocpCallback **ic2 = &ic->ic.sock->ic;
     while (*ic2) {
         if (*ic2 == &ic->ic) {
             *ic2 = ic->ic.next;
@@ -337,7 +337,7 @@ static int overlappedWriteCb(void* data, intptr_t rv)
     }
 
     ssize_t len = popkcel_threadLoop->numOfBytes;
-    struct Popkcel_Socket* sock = ic->ic.sock;
+    struct Popkcel_Socket *sock = ic->ic.sock;
     if (popkcel_threadLoop->numOfBytes < ic->len) {
         ic->pos += len;
         ic->len -= len;
@@ -351,9 +351,9 @@ static int overlappedWriteCb(void* data, intptr_t rv)
     return 0;
 }
 
-ssize_t popkcel_tryWrite(struct Popkcel_Socket* sock, const char* buf, size_t len, Popkcel_FuncCallback cb, void* data)
+ssize_t popkcel_tryWrite(struct Popkcel_Socket *sock, const char *buf, size_t len, Popkcel_FuncCallback cb, void *data)
 {
-    struct Popkcel_ICWrite* ic = malloc(sizeof(struct Popkcel_ICWrite) + len);
+    struct Popkcel_ICWrite *ic = malloc(sizeof(struct Popkcel_ICWrite) + len);
     ic->pos = 0;
     ic->len = len;
     memcpy(ic->buffer, buf, len);
@@ -372,12 +372,12 @@ ssize_t popkcel_tryWrite(struct Popkcel_Socket* sock, const char* buf, size_t le
     return setOl(r >= 0 ? (ssize_t)bw : -1, cb, data, &ic->ic, sock, &overlappedWriteCb);
 }
 
-ssize_t popkcel_trySendto(struct Popkcel_Socket* sock, const char* buf, size_t len, struct sockaddr* addr, socklen_t addrLen, Popkcel_FuncCallback cb, void* data)
+ssize_t popkcel_trySendto(struct Popkcel_Socket *sock, const char *buf, size_t len, struct sockaddr *addr, socklen_t addrLen, Popkcel_FuncCallback cb, void *data)
 {
-    struct Popkcel_IocpCallback* ic = malloc(sizeof(struct Popkcel_IocpCallback) + sizeof(WSABUF) + len);
+    struct Popkcel_IocpCallback *ic = malloc(sizeof(struct Popkcel_IocpCallback) + sizeof(WSABUF) + len);
     initIocpCallback(ic);
-    WSABUF* wb = (WSABUF*)((char*)ic + sizeof(struct Popkcel_IocpCallback));
-    wb->buf = (char*)wb + sizeof(WSABUF);
+    WSABUF *wb = (WSABUF *)((char *)ic + sizeof(struct Popkcel_IocpCallback));
+    wb->buf = (char *)wb + sizeof(WSABUF);
     wb->len = (ULONG)len;
     memcpy(wb->buf, buf, len);
     DWORD bw;
@@ -385,20 +385,20 @@ ssize_t popkcel_trySendto(struct Popkcel_Socket* sock, const char* buf, size_t l
     return setOl(r == 0 ? (ssize_t)bw : -1, cb, data, ic, sock, &overlappedCommonCb);
 }
 
-ssize_t popkcel_tryRead(struct Popkcel_Socket* sock, char* buf, size_t len, Popkcel_FuncCallback cb, void* data)
+ssize_t popkcel_tryRead(struct Popkcel_Socket *sock, char *buf, size_t len, Popkcel_FuncCallback cb, void *data)
 {
     ELCHECKIFONSTACK(sock->loop, buf, "Do not allocate buffer on stack!");
-    struct Popkcel_IocpCallback* ic = malloc(sizeof(struct Popkcel_IocpCallback));
+    struct Popkcel_IocpCallback *ic = malloc(sizeof(struct Popkcel_IocpCallback));
     initIocpCallback(ic);
     DWORD br;
     BOOL r = ReadFile(sock->fd, buf, (DWORD)len, &br, (LPOVERLAPPED)ic);
     return setOl(r == TRUE ? (ssize_t)br : -1, cb, data, ic, sock, &overlappedCommonCb);
 }
 
-static int overlappedReadForCb(void* data, intptr_t rv)
+static int overlappedReadForCb(void *data, intptr_t rv)
 {
-    struct Popkcel_IocpCallback* ic = data;
-    struct Popkcel_IocpCallback** ic2 = &ic->sock->ic;
+    struct Popkcel_IocpCallback *ic = data;
+    struct Popkcel_IocpCallback **ic2 = &ic->sock->ic;
     while (*ic2) {
         if (*ic2 == ic) {
             *ic2 = ic->next;
@@ -421,10 +421,10 @@ static int overlappedReadForCb(void* data, intptr_t rv)
     return 0;
 }
 
-ssize_t popkcel_tryReadFor(struct Popkcel_Socket* sock, char* buf, size_t len, Popkcel_FuncCallback cb, void* data)
+ssize_t popkcel_tryReadFor(struct Popkcel_Socket *sock, char *buf, size_t len, Popkcel_FuncCallback cb, void *data)
 {
     ELCHECKIFONSTACK(sock->loop, buf, "Do not allocate buffer on stack!");
-    struct Popkcel_IocpCallback* ic = malloc(sizeof(struct Popkcel_IocpCallback));
+    struct Popkcel_IocpCallback *ic = malloc(sizeof(struct Popkcel_IocpCallback));
     initIocpCallback(ic);
     DWORD br;
     BOOL r;
@@ -450,12 +450,12 @@ struct RFS
     DWORD flag;
 };
 
-ssize_t popkcel_tryRecvfrom(struct Popkcel_Socket* sock, char* buf, size_t len, struct sockaddr* addr, socklen_t* addrLen, Popkcel_FuncCallback cb, void* data)
+ssize_t popkcel_tryRecvfrom(struct Popkcel_Socket *sock, char *buf, size_t len, struct sockaddr *addr, socklen_t *addrLen, Popkcel_FuncCallback cb, void *data)
 {
     ELCHECKIFONSTACK(sock->loop, buf, "Do not allocate buffer on stack!");
     ELCHECKIFONSTACK2(sock->loop, addr, "Do not allocate addr on stack!");
     ELCHECKIFONSTACK2(sock->loop, addrLen, "Do not allocate addrLen on stack!");
-    struct RFS* rfs = malloc(sizeof(struct RFS));
+    struct RFS *rfs = malloc(sizeof(struct RFS));
     initIocpCallback(&rfs->ic);
     rfs->wb.buf = buf;
     rfs->wb.len = (ULONG)len;
@@ -465,17 +465,17 @@ ssize_t popkcel_tryRecvfrom(struct Popkcel_Socket* sock, char* buf, size_t len, 
     return setOl(r == 0 ? (ssize_t)br : -1, cb, data, &rfs->ic, sock, &overlappedCommonCb);
 }
 
-void popkcel_destroyListener(struct Popkcel_Listener* listener)
+void popkcel_destroyListener(struct Popkcel_Listener *listener)
 {
     closesocket((SOCKET)listener->curSock);
     closesocket((SOCKET)listener->fd);
 }
 
-static void listenerAcceptOne(struct Popkcel_Listener* listener);
+static void listenerAcceptOne(struct Popkcel_Listener *listener);
 
-static int acceptCb(void* data, intptr_t rv)
+static int acceptCb(void *data, intptr_t rv)
 {
-    struct Popkcel_Listener* listener = data;
+    struct Popkcel_Listener *listener = data;
     Popkcel_HandleType olds = listener->curSock;
     struct sockaddr *la, *ra;
     socklen_t li, ri;
@@ -484,16 +484,16 @@ static int acceptCb(void* data, intptr_t rv)
         addrLen = sizeof(struct sockaddr_in6) + 16;
     else
         addrLen = sizeof(struct sockaddr_in) + 16;
-    globalVars->GetAcceptExSockaddrs(listener->buffer, 0, addrLen, addrLen, &la, &li, &ra, &ri);
+    globalVars.GetAcceptExSockaddrs(listener->buffer, 0, addrLen, addrLen, &la, &li, &ra, &ri);
     listener->curSock = (Popkcel_HandleType)WSASocketW(listener->ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
     listenerAcceptOne(listener);
     listener->funcAccept(listener->funcAcceptData, olds, ra, ri);
     return 0;
 }
 
-static void listenerAcceptOne(struct Popkcel_Listener* listener)
+static void listenerAcceptOne(struct Popkcel_Listener *listener)
 {
-    struct Popkcel_IocpCallback* ic = malloc(sizeof(struct Popkcel_IocpCallback));
+    struct Popkcel_IocpCallback *ic = malloc(sizeof(struct Popkcel_IocpCallback));
     initIocpCallback(ic);
     ic->funcCb = &acceptCb;
     ic->cbData = listener;
@@ -502,10 +502,10 @@ static void listenerAcceptOne(struct Popkcel_Listener* listener)
         addrLen = sizeof(struct sockaddr_in6) + 16;
     else
         addrLen = sizeof(struct sockaddr_in) + 16;
-    globalVars->AcceptEx((SOCKET)listener->fd, (SOCKET)listener->curSock, listener->buffer, 0, addrLen, addrLen, NULL, (LPOVERLAPPED)ic);
+    globalVars.AcceptEx((SOCKET)listener->fd, (SOCKET)listener->curSock, listener->buffer, 0, addrLen, addrLen, NULL, (LPOVERLAPPED)ic);
 }
 
-void popkcel_initListener(struct Popkcel_Listener* listener, struct Popkcel_Loop* loop, char ipv6, Popkcel_HandleType fd)
+void popkcel_initListener(struct Popkcel_Listener *listener, struct Popkcel_Loop *loop, char ipv6, Popkcel_HandleType fd)
 {
     listener->loop = loop;
     listener->ipv6 = ipv6;
@@ -513,33 +513,35 @@ void popkcel_initListener(struct Popkcel_Listener* listener, struct Popkcel_Loop
         listener->fd = fd;
     else
         listener->fd = (Popkcel_HandleType)WSASocketW(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
-    popkcel_addHandle(loop, (struct Popkcel_Handle*)listener, 0);
+    popkcel_addHandle(loop, (struct Popkcel_Handle *)listener, 0);
     listener->curSock = (Popkcel_HandleType)WSASocketW(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 }
 
-int popkcel_listen(struct Popkcel_Listener* listener, uint16_t port, int backlog)
+int popkcel_listen(struct Popkcel_Listener *listener, uint16_t port, int backlog)
 {
-    popkcel_bind((struct Popkcel_Socket*)listener, port);
+    if (popkcel_bind((struct Popkcel_Socket *)listener, port) != POPKCEL_OK)
+        return POPKCEL_ERROR;
+
     if (listen((SOCKET)listener->fd, backlog))
         return POPKCEL_ERROR;
     listenerAcceptOne(listener);
     return POPKCEL_OK;
 }
 
-int popkcel__invokeLoop(void* data, intptr_t rv)
+int popkcel__invokeLoop(void *data, intptr_t rv)
 {
-    struct Popkcel_Loop* loop = data;
+    struct Popkcel_Loop *loop = data;
     PostQueuedCompletionStatus(loop->loopFd, 0, 0, NULL);
     return 0;
 }
 
-void* popkcel_dlopen(const char* fileName)
+void *popkcel_dlopen(const char *fileName)
 {
     auto h = LoadLibrary(fileName);
-    return (void*)h;
+    return (void *)h;
 }
 
-int popkcel_dlclose(void* handle)
+int popkcel_dlclose(void *handle)
 {
     if (FreeLibrary((HMODULE)handle))
         return POPKCEL_OK;
@@ -547,9 +549,9 @@ int popkcel_dlclose(void* handle)
         return POPKCEL_ERROR;
 }
 
-void* popkcel_dlsym(void* handle, const char* symbol)
+void *popkcel_dlsym(void *handle, const char *symbol)
 {
-    return (void*)GetProcAddress((HMODULE)handle, symbol);
+    return (void *)GetProcAddress((HMODULE)handle, symbol);
 }
 
 int64_t popkcel_getCurrentTime()
@@ -559,4 +561,13 @@ int64_t popkcel_getCurrentTime()
 #else
     return GetTickCount();
 #endif
+}
+
+int popkcel_getpeername(struct Popkcel_Socket *sock, struct sockaddr *addr, socklen_t *addrLen)
+{
+    int r = getpeername((SOCKET)sock->fd, addr, addrLen);
+    if (!r)
+        return POPKCEL_OK;
+    else
+        return POPKCEL_ERROR;
 }

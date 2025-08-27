@@ -6,6 +6,6 @@ BraceWrapping:
   AfterUnion: true
   BeforeElse: true
   AfterFunction: true
-Standard: Cpp03
 NamespaceIndentation: Inner
 IndentPPDirectives: AfterHash
+PointerAlignment: Right

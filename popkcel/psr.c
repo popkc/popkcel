@@ -7,18 +7,20 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 #include "popkcel.h"
+#include "popkcel_private.h"
 #include "popkcelpsr.h"
+#include "portable_endian.h"
 
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-static int sendCb(void* data, intptr_t rv);
-static int rpsSend(struct Popkcel_RbtnodePsrSend* rps);
-static int psrTimerCb(void* data, intptr_t rv);
+static int sendCb(void *data, intptr_t rv);
+static int rpsSend(struct Popkcel_RbtnodePsrSend *rps);
+static int psrTimerCb(void *data, intptr_t rv);
 
-static int rpsInit(struct Popkcel_RbtnodePsrSend* rps, struct Popkcel_PsrField* psr)
+static int rpsInit(struct Popkcel_RbtnodePsrSend *rps, struct Popkcel_PsrField *psr)
 {
     rps->sendCount = 0;
     rps->psr = psr;
@@ -31,11 +33,11 @@ static int rpsInit(struct Popkcel_RbtnodePsrSend* rps, struct Popkcel_PsrField* 
         return POPKCEL_ERROR;
     else if (r >= 0)
         popkcel_setTimer(&rps->timer, 5000, 5000);
-    popkcel_rbtMultiInsert(&psr->nodePieceSend, (struct Popkcel_Rbtnode*)rps);
+    popkcel_rbtMultiInsert(&psr->nodePieceSend, (struct Popkcel_Rbtnode *)rps);
     return r;
 }
 
-static void psrError(struct Popkcel_PsrField* psr)
+static void psrError(struct Popkcel_PsrField *psr)
 {
     popkcel_destroyPsrField(psr);
     if (psr->callback) {
@@ -43,19 +45,19 @@ static void psrError(struct Popkcel_PsrField* psr)
     }
 }
 
-static int canSend(struct Popkcel_PsrField* psr, uint32_t sid)
+static int canSend(struct Popkcel_PsrField *psr, uint32_t sid)
 {
     uint32_t rlid = psr->lastMyConfirmedSendId;
-    struct Popkcel_Rbtnode* it = popkcel_rbtBegin(psr->nodePieceSend);
+    struct Popkcel_Rbtnode *it = popkcel_rbtBegin(psr->nodePieceSend);
     if (it && it->key < rlid)
         rlid = (uint32_t)it->key - 1;
     uint32_t e = rlid + psr->window + 1;
     return sid >= rlid && sid <= e;
 }
 
-static void psrCheckUnsent(struct Popkcel_PsrField* psr) // 效率有点低，可优化
+static void psrCheckUnsent(struct Popkcel_PsrField *psr) // 效率有点低，可优化
 {
-    struct Popkcel_Rbtnode* it = popkcel_rbtBegin(psr->nodePieceSend);
+    struct Popkcel_Rbtnode *it = popkcel_rbtBegin(psr->nodePieceSend);
     if (!it)
         return;
 
@@ -65,7 +67,7 @@ static void psrCheckUnsent(struct Popkcel_PsrField* psr) // 效率有点低，�
     uint32_t e = rlid + psr->window + 1;
 
     do {
-        struct Popkcel_RbtnodePsrSend* rps = (struct Popkcel_RbtnodePsrSend*)it;
+        struct Popkcel_RbtnodePsrSend *rps = (struct Popkcel_RbtnodePsrSend *)it;
         if (rps->sendCount == -1) {
             if (rps->key >= rlid && rps->key <= e) {
                 rps->sendCount = 0;
@@ -78,7 +80,7 @@ static void psrCheckUnsent(struct Popkcel_PsrField* psr) // 效率有点低，�
     psr->needSend = 0;
 }
 
-static uint32_t bufChecksum(const char* tranId, const char* buf, int bufLen)
+static uint32_t bufChecksum(const char *tranId, const char *buf, int bufLen)
 {
     uint32_t ul;
     memcpy(&ul, tranId, 4);
@@ -95,17 +97,17 @@ static uint32_t bufChecksum(const char* tranId, const char* buf, int bufLen)
     return ul;
 }
 
-static int64_t ipPortHash(struct sockaddr* addr)
+static int64_t ipPortHash(struct sockaddr *addr)
 {
     uint64_t r = 0;
     if (addr->sa_family == AF_INET) {
-        struct sockaddr_in* a4 = (struct sockaddr_in*)addr;
-        memcpy((char*)&r + 2, &a4->sin_addr, 4);
+        struct sockaddr_in *a4 = (struct sockaddr_in *)addr;
+        memcpy((char *)&r + 2, &a4->sin_addr, 4);
         memcpy(&r, &a4->sin_port, 2);
     }
     else {
-        struct sockaddr_in6* a6 = (struct sockaddr_in6*)addr;
-        char* i6 = (char*)&a6->sin6_addr;
+        struct sockaddr_in6 *a6 = (struct sockaddr_in6 *)addr;
+        char *i6 = (char *)&a6->sin6_addr;
         for (size_t i = 0; i < 16; i++) {
             r = i6[i] + (r << 6) + (r << 16) - r;
         }
@@ -115,11 +117,11 @@ static int64_t ipPortHash(struct sockaddr* addr)
     return r;
 }
 
-static void psrAddReply(struct Popkcel_PsrField* psr, uint32_t rid)
+static void psrAddReply(struct Popkcel_PsrField *psr, uint32_t rid)
 {
     struct Popkcel_RbtInsertPos ipos = popkcel_rbtInsertPos(&psr->nodeReply, rid);
     if (ipos.ipos) {
-        struct Popkcel_Rbtnode* it = malloc(sizeof(struct Popkcel_Rbtnode));
+        struct Popkcel_Rbtnode *it = malloc(sizeof(struct Popkcel_Rbtnode));
         it->key = rid;
         popkcel_rbtInsertAtPos(&psr->nodeReply, ipos, it);
         if (!psr->timerStarted) {
@@ -129,7 +131,7 @@ static void psrAddReply(struct Popkcel_PsrField* psr, uint32_t rid)
     }
 }
 
-static void sendConnConfirm(struct Popkcel_PsrField* psr)
+static void sendConnConfirm(struct Popkcel_PsrField *psr)
 {
     psr->mySendId++;
     if (psr->mySendId >= 4) {
@@ -139,12 +141,12 @@ static void sendConnConfirm(struct Popkcel_PsrField* psr)
     unsigned char buf[7];
     buf[0] = POPKCEL_PF_APT | POPKCEL_PF_SYN | POPKCEL_PF_REPLY;
     memcpy(buf + 1, psr->tranId, 4);
-    uint16_t us = htons(psr->window);
+    uint16_t us = htole16(psr->window);
     memcpy(buf + 5, &us, 2);
-    popkcel_trySendto((struct Popkcel_Socket*)psr->sock, (char*)buf, 7, (struct sockaddr*)&psr->remoteAddr, psr->addrLen, NULL, NULL);
+    popkcel_trySendto((struct Popkcel_Socket *)psr->sock, (char *)buf, 7, (struct sockaddr *)&psr->remoteAddr, psr->addrLen, NULL, NULL);
 }
 
-static void sendSynConfirmReply(struct Popkcel_PsrField* psr)
+static void sendSynConfirmReply(struct Popkcel_PsrField *psr)
 {
     psr->synConfirm = 1;
     memcpy(psr->tranIdNew, psr->sock->psrBuffer + 2, 4);
@@ -152,23 +154,23 @@ static void sendSynConfirmReply(struct Popkcel_PsrField* psr)
     buf[0] = POPKCEL_PF_APT | POPKCEL_PF_SYN | POPKCEL_PF_REPLY | POPKCEL_PF_CONFIRM;
     memcpy(buf + 1, psr->tranIdNew, 4);
     memcpy(buf + 5, psr->tranId, 4);
-    popkcel_trySendto((struct Popkcel_Socket*)psr->sock, (char*)buf, 9, (struct sockaddr*)&psr->remoteAddr, psr->addrLen, NULL, NULL);
+    popkcel_trySendto((struct Popkcel_Socket *)psr->sock, (char *)buf, 9, (struct sockaddr *)&psr->remoteAddr, psr->addrLen, NULL, NULL);
 }
 
-static void createNewConnection(struct Popkcel_PsrSocket* sock, uint16_t us, int64_t h)
+static void createNewConnection(struct Popkcel_PsrSocket *sock, uint16_t us, int64_t h)
 {
-    us = ntohs(us);
+    us = le16toh(us);
     if (us <= sock->maxWindow)
         sock->psrWindow = us;
     else
         sock->psrWindow = sock->maxWindow;
-    struct Popkcel_PsrField* psr = sock->listenCb(sock, NULL);
+    struct Popkcel_PsrField *psr = sock->listenCb(sock, NULL);
     if (psr) {
         sendConnConfirm(psr);
-        struct Popkcel_RbtnodeData* it = malloc(sizeof(struct Popkcel_RbtnodeData));
+        struct Popkcel_RbtnodeData *it = malloc(sizeof(struct Popkcel_RbtnodeData));
         it->key = h;
         it->value = psr;
-        popkcel_rbtMultiInsert(&sock->nodePf, (struct Popkcel_Rbtnode*)it);
+        popkcel_rbtMultiInsert(&sock->nodePf, (struct Popkcel_Rbtnode *)it);
         sock->listenCb(sock, psr);
     }
 }
@@ -179,10 +181,10 @@ static void createNewConnection(struct Popkcel_PsrSocket* sock, uint16_t us, int
 #    define GOTOEND assert(0)
 #endif
 
-static int psrRecvFromCb(void* data, intptr_t rv)
+static int psrRecvFromCb(void *data, intptr_t rv)
 {
-    struct Popkcel_PsrSocket* sock = data;
-    struct Popkcel_PsrField* psr;
+    struct Popkcel_PsrSocket *sock = data;
+    struct Popkcel_PsrField *psr;
     int64_t h;
     uint32_t ul, ul2;
     uint16_t us;
@@ -226,13 +228,13 @@ restart:;
             if (sock->psrBuffer[1] != POPKCEL_PSRVERSION)
                 GOTOEND;
 
-            h = ipPortHash((struct sockaddr*)&sock->remoteAddr);
-            struct Popkcel_RbtnodeData* it = (struct Popkcel_RbtnodeData*)popkcel_rbtFind(sock->nodePf, h);
+            h = ipPortHash((struct sockaddr *)&sock->remoteAddr);
+            struct Popkcel_RbtnodeData *it = (struct Popkcel_RbtnodeData *)popkcel_rbtFind(sock->nodePf, h);
             if (it) {
                 psr = it->value;
                 if (sock->ipv6) {
                     while (memcmp(&psr->remoteAddr.sin6_addr, &sock->remoteAddr.sin6_addr, sizeof(sock->remoteAddr.sin6_addr))) {
-                        it = (struct Popkcel_RbtnodeData*)popkcel_rbtNext((struct Popkcel_Rbtnode*)it);
+                        it = (struct Popkcel_RbtnodeData *)popkcel_rbtNext((struct Popkcel_Rbtnode *)it);
                         if (!it || it->key != h)
                             goto passCheck;
                         psr = it->value;
@@ -243,11 +245,11 @@ restart:;
                     if (memcmp(psr->tranId, sock->psrBuffer + 2, 4) > 0) {
                         memcpy(psr->tranId, sock->psrBuffer + 2, 4);
                         if (psr->nodePieceSend && psr->nodePieceSend->key == 0) {
-                            memcpy(((struct Popkcel_RbtnodePsrSend*)(psr->nodePieceSend))->buffer + 2, sock->psrBuffer + 2, 4);
+                            memcpy(((struct Popkcel_RbtnodePsrSend *)(psr->nodePieceSend))->buffer + 2, sock->psrBuffer + 2, 4);
                         }
                     }
                     memcpy(&us, sock->psrBuffer + 6, 2);
-                    us = ntohs(us);
+                    us = le16toh(us);
                     if (us < psr->window)
                         psr->window = us;
                     psr->mySendId = 0;
@@ -256,7 +258,7 @@ restart:;
                 else if (psr->state == POPKCEL_PS_CONNECTED) {
                     memcpy(psr->tranId, sock->psrBuffer + 2, 4);
                     memcpy(&us, sock->psrBuffer + 6, 2);
-                    us = ntohs(us);
+                    us = le16toh(us);
                     if (us <= sock->maxWindow)
                         psr->window = us;
                     else
@@ -275,18 +277,19 @@ restart:;
         }
     }
     else {
-        h = ipPortHash((struct sockaddr*)&sock->remoteAddr);
-        struct Popkcel_RbtnodeData* it = (struct Popkcel_RbtnodeData*)popkcel_rbtFind(sock->nodePf, h);
-        if (it) {
-            psr = it->value;
+        psr = popkcel_psrFind(sock, (struct sockaddr *)&sock->remoteAddr);
+        // h = ipPortHash((struct sockaddr *)&sock->remoteAddr);
+        // struct Popkcel_RbtnodeData *it = (struct Popkcel_RbtnodeData *)popkcel_rbtFind(sock->nodePf, h);
+        if (psr) {
+            /*psr = it->value;
             if (sock->ipv6) {
                 while (memcmp(&psr->remoteAddr.sin6_addr, &sock->remoteAddr.sin6_addr, sizeof(sock->remoteAddr.sin6_addr))) {
-                    it = (struct Popkcel_RbtnodeData*)popkcel_rbtNext((struct Popkcel_Rbtnode*)it);
+                    it = (struct Popkcel_RbtnodeData *)popkcel_rbtNext((struct Popkcel_Rbtnode *)it);
                     if (!it || it->key != h)
                         GOTOEND;
                     psr = it->value;
                 }
-            }
+            }*/
 
             if (flag & POPKCEL_PF_SYN) {
                 switch (flag) {
@@ -298,7 +301,7 @@ restart:;
                     if (memcmp(psr->tranId, sock->psrBuffer + 1, 4))
                         GOTOEND;
                     memcpy(&us, sock->psrBuffer + 5, 2);
-                    us = ntohs(us);
+                    us = le16toh(us);
                     if (us > psr->window)
                         GOTOEND;
                     psr->mySendId = 0;
@@ -306,7 +309,7 @@ restart:;
                     psr->state = POPKCEL_PS_TRANSFER;
                     psr->window = us;
                     if (psr->nodePieceSend) {
-                        struct Popkcel_RbtnodePsrSend* it = (struct Popkcel_RbtnodePsrSend*)psr->nodePieceSend;
+                        struct Popkcel_RbtnodePsrSend *it = (struct Popkcel_RbtnodePsrSend *)psr->nodePieceSend;
                         popkcel_stopTimer(&it->timer);
                         psr->nodePieceSend = NULL;
                         if (it->pending == 0)
@@ -347,7 +350,7 @@ restart:;
                         GOTOEND;
                     psr->synConfirm = 1;
                     if (psr->nodePieceSend) {
-                        struct Popkcel_RbtnodePsrSend* it = (struct Popkcel_RbtnodePsrSend*)psr->nodePieceSend;
+                        struct Popkcel_RbtnodePsrSend *it = (struct Popkcel_RbtnodePsrSend *)psr->nodePieceSend;
                         popkcel_stopTimer(&it->timer);
                         psr->nodePieceSend = NULL;
                         if (it->pending == 0)
@@ -355,13 +358,13 @@ restart:;
                         else
                             it->pending = 2;
                     }
-                    struct Popkcel_RbtnodePsrSend* rps = malloc(sizeof(struct Popkcel_RbtnodePsrSend) + 11);
+                    struct Popkcel_RbtnodePsrSend *rps = malloc(sizeof(struct Popkcel_RbtnodePsrSend) + 11);
                     rps->key = 0;
                     rps->bufLen = 11;
                     rps->buffer[0] = (unsigned char)(POPKCEL_PF_APT | POPKCEL_PF_SYN | POPKCEL_PF_CONFIRM);
                     memcpy(rps->buffer + 1, psr->tranId, 4);
                     memcpy(rps->buffer + 5, sock->psrBuffer + 5, 4);
-                    us = htons(psr->window);
+                    us = htole16(psr->window);
                     memcpy(rps->buffer + 9, &us, 2);
                     if (rpsInit(rps, psr) == POPKCEL_ERROR) {
                         free(rps);
@@ -393,54 +396,58 @@ restart:;
                         if ((uintptr_t)rv < ul + 6)
                             GOTOEND;
                         memcpy(&ul2, sock->psrBuffer + ul, 4);
-                        ul2 = ntohl(ul2);
+                        ul2 = le32toh(ul2);
                         ul += 4;
                         memcpy(&us, sock->psrBuffer + ul, 2);
-                        us = ntohs(us);
+                        us = le16toh(us);
                         ul += 2;
                         if (!us || ul + us > (uintptr_t)rv)
                             GOTOEND;
                         psrAddReply(psr, ul2);
-                        if (ul2 == psr->othersSendId) {
+                        if (ul2 == psr->oppositeSendId) {
                             psr->recvBuf = sock->psrBuffer + ul;
-                            psr->othersSendId++;
-                            if (psr->callback(psr, us))
-                                goto end;
-                            struct Popkcel_Rbtnode* it = popkcel_rbtFind(psr->nodePieceReceive, psr->othersSendId);
+                            psr->oppositeSendId++;
+                            if (psr->callback) {
+                                if (psr->callback(psr, us))
+                                    goto end;
+                            }
+                            struct Popkcel_Rbtnode *it = popkcel_rbtFind(psr->nodePieceReceive, psr->oppositeSendId);
                             if (it) {
                                 // assert(0);
                                 do {
-                                    struct Popkcel_RbtnodeBuf* rit = (struct Popkcel_RbtnodeBuf*)it;
+                                    struct Popkcel_RbtnodeBuf *rit = (struct Popkcel_RbtnodeBuf *)it;
                                     psr->recvBuf = rit->buffer;
-                                    if (psr->callback(psr, rit->bufLen))
-                                        goto end;
-                                    psr->othersSendId++;
-                                    if (psr->othersSendId == 0) {
+                                    if (psr->callback) {
+                                        if (psr->callback(psr, rit->bufLen))
+                                            goto end;
+                                    }
+                                    psr->oppositeSendId++;
+                                    if (psr->oppositeSendId == 0) {
                                         assert(0);
-                                        popkcel_rbtDelete(&psr->nodePieceReceive, (struct Popkcel_Rbtnode*)rit);
+                                        popkcel_rbtDelete(&psr->nodePieceReceive, (struct Popkcel_Rbtnode *)rit);
                                         free(rit);
                                         it = popkcel_rbtBegin(psr->nodePieceReceive);
                                     }
                                     else {
                                         it = popkcel_rbtNext(it);
-                                        popkcel_rbtDelete(&psr->nodePieceReceive, (struct Popkcel_Rbtnode*)rit);
+                                        popkcel_rbtDelete(&psr->nodePieceReceive, (struct Popkcel_Rbtnode *)rit);
                                         free(rit);
                                     }
-                                } while (it && it->key == psr->othersSendId);
+                                } while (it && it->key == psr->oppositeSendId);
                             }
                         }
                         else {
                             // assert(0);
-                            uint32_t m = psr->othersSendId + psr->window;
-                            if (ul2 <= m || (m < psr->othersSendId && ul2 > psr->othersSendId)) {
-                                assert(m > psr->othersSendId);
+                            uint32_t m = psr->oppositeSendId + psr->window;
+                            if (ul2 <= m || (m < psr->oppositeSendId && ul2 > psr->oppositeSendId)) {
+                                assert(m > psr->oppositeSendId);
                                 struct Popkcel_RbtInsertPos ipos = popkcel_rbtInsertPos(&psr->nodePieceReceive, ul2);
                                 if (ipos.ipos) {
-                                    struct Popkcel_RbtnodeBuf* rb = malloc(sizeof(struct Popkcel_RbtnodeBuf) + us);
+                                    struct Popkcel_RbtnodeBuf *rb = malloc(sizeof(struct Popkcel_RbtnodeBuf) + us);
                                     rb->bufLen = us;
                                     rb->key = ul2;
                                     memcpy(rb->buffer, sock->psrBuffer + ul, us);
-                                    popkcel_rbtInsertAtPos(&psr->nodePieceReceive, ipos, (struct Popkcel_Rbtnode*)rb);
+                                    popkcel_rbtInsertAtPos(&psr->nodePieceReceive, ipos, (struct Popkcel_Rbtnode *)rb);
                                 }
                             }
                         }
@@ -451,17 +458,17 @@ restart:;
                             GOTOEND;
                         uint32_t st;
                         memcpy(&st, sock->psrBuffer + ul, 4);
-                        st = ntohl(st);
+                        st = le32toh(st);
                         ul += 4;
                         uint32_t e;
                         memcpy(&e, sock->psrBuffer + ul, 4);
-                        e = ntohl(e);
+                        e = le32toh(e);
                         ul += 4;
                         uint32_t len = e - st;
                         if (len > psr->window)
                             GOTOEND;
 
-                        struct Popkcel_Rbtnode* it = popkcel_rbtLowerBound(psr->nodePieceSend, st);
+                        struct Popkcel_Rbtnode *it = popkcel_rbtLowerBound(psr->nodePieceSend, st);
                         // assert(it->key == st);
                         int restarted = 0;
                         while (it && it->key - st <= len) {
@@ -470,10 +477,10 @@ restart:;
                                 assert(psr->lastMyConfirmedSendId < UINT32_MAX - psr->window);
                                 psr->lastMyConfirmedSendId = (uint32_t)it->key;
                             }
-                            struct Popkcel_RbtnodePsrSend* sit = (struct Popkcel_RbtnodePsrSend*)it;
+                            struct Popkcel_RbtnodePsrSend *sit = (struct Popkcel_RbtnodePsrSend *)it;
                             it = popkcel_rbtNext(it);
                             popkcel_stopTimer(&sit->timer);
-                            popkcel_rbtDelete(&psr->nodePieceSend, (struct Popkcel_Rbtnode*)sit);
+                            popkcel_rbtDelete(&psr->nodePieceSend, (struct Popkcel_Rbtnode *)sit);
                             if (sit->pending == 0)
                                 free(sit);
                             else
@@ -495,8 +502,8 @@ restart:;
                             GOTOEND;
                         do {
                             memcpy(&ul2, sock->psrBuffer + ul, 4);
-                            ul2 = ntohl(ul2);
-                            struct Popkcel_RbtnodePsrSend* it = (struct Popkcel_RbtnodePsrSend*)popkcel_rbtFind(psr->nodePieceSend, ul2);
+                            ul2 = le32toh(ul2);
+                            struct Popkcel_RbtnodePsrSend *it = (struct Popkcel_RbtnodePsrSend *)popkcel_rbtFind(psr->nodePieceSend, ul2);
                             if (it) {
                                 if (psr->lastMyConfirmedSendId < it->key
                                     || (psr->lastMyConfirmedSendId >= UINT32_MAX - psr->window && it->key <= psr->window)) {
@@ -504,7 +511,7 @@ restart:;
                                     psr->lastMyConfirmedSendId = (uint32_t)it->key;
                                 }
                                 popkcel_stopTimer(&it->timer);
-                                popkcel_rbtDelete(&psr->nodePieceSend, (struct Popkcel_Rbtnode*)it);
+                                popkcel_rbtDelete(&psr->nodePieceSend, (struct Popkcel_Rbtnode *)it);
                                 if (it->pending == 0)
                                     free(it);
                                 else
@@ -538,24 +545,24 @@ restart:;
         }
     }
 end:;
-    rv = popkcel_tryRecvfrom((struct Popkcel_Socket*)sock, sock->psrBuffer, POPKCEL_MAXUDPSIZE, (struct sockaddr*)&sock->remoteAddr, &sock->remoteAddrLen, &psrRecvFromCb, sock);
+    rv = popkcel_tryRecvfrom((struct Popkcel_Socket *)sock, sock->psrBuffer, POPKCEL_MAXUDPSIZE, (struct sockaddr *)&sock->remoteAddr, &sock->remoteAddrLen, &psrRecvFromCb, sock);
     if (rv != POPKCEL_WOULDBLOCK)
         goto restart;
     return 0;
 }
 
-static int psrKlTimerCb(void* data, intptr_t rv)
+static int psrKlTimerCb(void *data, intptr_t rv)
 {
-    struct Popkcel_PsrSocket* sock = data;
+    struct Popkcel_PsrSocket *sock = data;
     if (sock->lastSendTime) {
         int64_t nt = popkcel_getCurrentTime();
         if (nt - sock->lastSendTime > 15000) {
             sock->lastSendTime = nt;
             if (!sock->ipv6) {
-                popkcel_trySendto((struct Popkcel_Socket*)sock, (char*)sock, 1, (struct sockaddr*)&popkcel_globalVar->tempAddr, sizeof(struct sockaddr_in), NULL, NULL);
+                popkcel_trySendto((struct Popkcel_Socket *)sock, (char *)sock, 1, (struct sockaddr *)&popkcel_globalVar.tempAddr, sizeof(struct sockaddr_in), NULL, NULL);
             }
             else {
-                popkcel_trySendto((struct Popkcel_Socket*)sock, (char*)sock, 1, (struct sockaddr*)&popkcel_globalVar->tempAddr6, sizeof(struct sockaddr_in6), NULL, NULL);
+                popkcel_trySendto((struct Popkcel_Socket *)sock, (char *)sock, 1, (struct sockaddr *)&popkcel_globalVar.tempAddr6, sizeof(struct sockaddr_in6), NULL, NULL);
             }
         }
     }
@@ -568,7 +575,7 @@ struct LbSingle
     uint32_t pos;
 };
 
-static int addSingle(struct LbSingle** ids, int* pbufLen, size_t pos, uint32_t id)
+static int addSingle(struct LbSingle **ids, int *pbufLen, size_t pos, uint32_t id)
 {
     if (!*ids) {
         *ids = malloc(sizeof(struct LbSingle));
@@ -577,7 +584,7 @@ static int addSingle(struct LbSingle** ids, int* pbufLen, size_t pos, uint32_t i
     }
 
     if (*pbufLen - pos >= 4) {
-        (*ids)->ids[(*ids)->pos] = htonl(id);
+        (*ids)->ids[(*ids)->pos] = htole32(id);
         (*ids)->pos++;
         *pbufLen -= 4;
         if ((*ids)->pos < 255)
@@ -587,29 +594,29 @@ static int addSingle(struct LbSingle** ids, int* pbufLen, size_t pos, uint32_t i
     return 1;
 }
 
-static void addRange(uint32_t sid, uint32_t lid, char* buf, int* pos)
+static void addRange(uint32_t sid, uint32_t lid, char *buf, int *pos)
 {
     buf[*pos] = (POPKCEL_PF_REPLY | POPKCEL_PF_TRANSFORM);
     (*pos)++;
-    uint32_t ul = htonl(sid);
+    uint32_t ul = htole32(sid);
     memcpy(buf + *pos, &ul, 4);
     *pos += 4;
-    ul = htonl(lid);
+    ul = htole32(lid);
     memcpy(buf + *pos, &ul, 4);
     *pos += 4;
 }
 
-static int makeReplyBuffer(struct Popkcel_PsrField* psr, char* buf, int bufLen)
+static int makeReplyBuffer(struct Popkcel_PsrField *psr, char *buf, int bufLen)
 {
     int pos = 0;
-    struct LbSingle* ids = NULL;
+    struct LbSingle *ids = NULL;
     int64_t sid = -1, lid;
-    struct Popkcel_Rbtnode* it = popkcel_rbtBegin(psr->nodeReply);
+    struct Popkcel_Rbtnode *it = popkcel_rbtBegin(psr->nodeReply);
     while (it) {
         if (sid >= 0) {
             if (it->key == lid + 1) {
                 lid++;
-                struct Popkcel_Rbtnode* oit = it;
+                struct Popkcel_Rbtnode *oit = it;
                 it = popkcel_rbtNext(it);
                 popkcel_rbtDelete(&psr->nodeReply, oit);
                 free(oit);
@@ -637,7 +644,7 @@ static int makeReplyBuffer(struct Popkcel_PsrField* psr, char* buf, int bufLen)
         }
         else {
             sid = lid = it->key;
-            struct Popkcel_Rbtnode* oit = it;
+            struct Popkcel_Rbtnode *oit = it;
             it = popkcel_rbtNext(it);
             popkcel_rbtDelete(&psr->nodeReply, oit);
             free(oit);
@@ -651,7 +658,7 @@ static int makeReplyBuffer(struct Popkcel_PsrField* psr, char* buf, int bufLen)
                 pos++;
                 buf[pos] = 1;
                 pos++;
-                uint32_t ul = htonl((uint32_t)sid);
+                uint32_t ul = htole32((uint32_t)sid);
                 memcpy(buf + pos, &ul, 4);
                 pos += 4;
             }
@@ -674,10 +681,10 @@ static int makeReplyBuffer(struct Popkcel_PsrField* psr, char* buf, int bufLen)
     return pos;
 }
 
-static int rpsSend(struct Popkcel_RbtnodePsrSend* rps)
+static int rpsSend(struct Popkcel_RbtnodePsrSend *rps)
 {
     rps->pending = 0;
-    ssize_t r = popkcel_trySendto((struct Popkcel_Socket*)rps->psr->sock, rps->buffer, rps->bufLen, (struct sockaddr*)&rps->psr->remoteAddr, rps->psr->addrLen, &sendCb, rps);
+    ssize_t r = popkcel_trySendto((struct Popkcel_Socket *)rps->psr->sock, rps->buffer, rps->bufLen, (struct sockaddr *)&rps->psr->remoteAddr, rps->psr->addrLen, &sendCb, rps);
 
     if (r == POPKCEL_ERROR) {
         popkcel_stopTimer(&rps->timer);
@@ -692,9 +699,9 @@ static int rpsSend(struct Popkcel_RbtnodePsrSend* rps)
     return (int)r;
 }
 
-static int sendCb(void* data, intptr_t rv)
+static int sendCb(void *data, intptr_t rv)
 {
-    struct Popkcel_RbtnodePsrSend* rps = data;
+    struct Popkcel_RbtnodePsrSend *rps = data;
     if (rps->pending == 2) {
         assert(rps->timer.iter.isRed == 2);
         free(rps);
@@ -719,10 +726,10 @@ static int sendCb(void* data, intptr_t rv)
 }
 
 // 5000毫秒一次重传
-static int psrTimerCb(void* data, intptr_t rv)
+static int psrTimerCb(void *data, intptr_t rv)
 {
-    struct Popkcel_RbtnodePsrSend* rps = data;
-    struct Popkcel_PsrField* psr = rps->psr;
+    struct Popkcel_RbtnodePsrSend *rps = data;
+    struct Popkcel_PsrField *psr = rps->psr;
     if (rps->sendCount >= 3) {
         psrError(psr);
         return 1;
@@ -732,13 +739,13 @@ static int psrTimerCb(void* data, intptr_t rv)
     return 0;
 }
 
-static int psrSendBuffer(struct Popkcel_PsrField* psr, Popkcel_FuncCallback cb, void* data, int cs)
+static int psrSendBuffer(struct Popkcel_PsrField *psr, Popkcel_FuncCallback cb, void *data, int cs)
 {
     assert(psr->bufferPos);
     uint32_t ul = bufChecksum(psr->tranId, psr->buffer + 5, psr->bufferPos - 5);
     memcpy(psr->buffer + 1, &ul, 4);
 
-    struct Popkcel_RbtnodePsrSend* rps = malloc(sizeof(struct Popkcel_RbtnodePsrSend) + psr->bufferPos);
+    struct Popkcel_RbtnodePsrSend *rps = malloc(sizeof(struct Popkcel_RbtnodePsrSend) + psr->bufferPos);
     rps->bufLen = psr->bufferPos;
     memcpy(rps->buffer, psr->buffer, psr->bufferPos);
     psr->bufferPos = 0;
@@ -746,7 +753,7 @@ static int psrSendBuffer(struct Popkcel_PsrField* psr, Popkcel_FuncCallback cb, 
     rps->key = psr->mySendId;
     rps->timer.cbData = rps;
     rps->timer.funcCb = &psrTimerCb;
-    popkcel_rbtMultiInsert(&psr->nodePieceSend, (struct Popkcel_Rbtnode*)rps);
+    popkcel_rbtMultiInsert(&psr->nodePieceSend, (struct Popkcel_Rbtnode *)rps);
     popkcel_initTimer(&rps->timer, psr->sock->loop);
     psr->mySendId++;
     rps->userData = data;
@@ -773,13 +780,13 @@ static int psrSendBuffer(struct Popkcel_PsrField* psr, Popkcel_FuncCallback cb, 
 }
 
 // 每10毫秒发送一次的timer cb，用于合并短的发送包
-static int cbPsrTimerSend(void* data, intptr_t rv)
+static int cbPsrTimerSend(void *data, intptr_t rv)
 {
-    struct Popkcel_PsrField* psr = data;
+    struct Popkcel_PsrField *psr = data;
     do {
         char replyOnly;
         if (psr->bufferPos) {
-            uint16_t us = htons(psr->bufferPos - 11);
+            uint16_t us = htole16(psr->bufferPos - 11);
             memcpy(psr->buffer + 9, &us, 2);
             replyOnly = 0;
         }
@@ -804,7 +811,7 @@ static int cbPsrTimerSend(void* data, intptr_t rv)
             uint32_t ul = bufChecksum(psr->tranId, psr->buffer + 5, psr->bufferPos - 5);
             memcpy(psr->buffer + 1, &ul, 4);
 
-            ssize_t r = popkcel_trySendto((struct Popkcel_Socket*)psr->sock, psr->buffer, psr->bufferPos, (struct sockaddr*)&psr->remoteAddr, psr->addrLen, NULL, NULL);
+            ssize_t r = popkcel_trySendto((struct Popkcel_Socket *)psr->sock, psr->buffer, psr->bufferPos, (struct sockaddr *)&psr->remoteAddr, psr->addrLen, NULL, NULL);
             psr->sock->lastSendTime = popkcel_getCurrentTime();
             if (r == POPKCEL_ERROR) {
                 psrError(psr);
@@ -823,21 +830,21 @@ static int cbPsrTimerSend(void* data, intptr_t rv)
     return 1;
 }
 
-int popkcel_psrTryConnect(struct Popkcel_PsrField* psr)
+int popkcel_psrTryConnect(struct Popkcel_PsrField *psr)
 {
     if (psr->state != POPKCEL_PS_INIT)
         return POPKCEL_ERROR;
-    int64_t h = ipPortHash((struct sockaddr*)&psr->remoteAddr);
-    struct Popkcel_RbtnodeData* it;
+    int64_t h = ipPortHash((struct sockaddr *)&psr->remoteAddr);
+    struct Popkcel_RbtnodeData *it;
     struct Popkcel_RbtInsertPos ipos;
     if (psr->sock->ipv6) {
-        it = (struct Popkcel_RbtnodeData*)popkcel_rbtFind(psr->sock->nodePf, h);
+        it = (struct Popkcel_RbtnodeData *)popkcel_rbtFind(psr->sock->nodePf, h);
         if (it) {
             do {
-                struct Popkcel_PsrField* pf2 = it->value;
+                struct Popkcel_PsrField *pf2 = it->value;
                 if (!memcmp(&pf2->remoteAddr.sin6_addr, &psr->remoteAddr.sin6_addr, sizeof(psr->remoteAddr.sin6_addr)))
                     return POPKCEL_ERROR;
-                it = (struct Popkcel_RbtnodeData*)popkcel_rbtNext((struct Popkcel_Rbtnode*)it);
+                it = (struct Popkcel_RbtnodeData *)popkcel_rbtNext((struct Popkcel_Rbtnode *)it);
             } while (it && it->key == h);
         }
     }
@@ -847,7 +854,7 @@ int popkcel_psrTryConnect(struct Popkcel_PsrField* psr)
             return POPKCEL_ERROR;
     }
 
-    struct Popkcel_RbtnodePsrSend* rps = malloc(sizeof(struct Popkcel_RbtnodePsrSend) + 8);
+    struct Popkcel_RbtnodePsrSend *rps = malloc(sizeof(struct Popkcel_RbtnodePsrSend) + 8);
     rps->key = 0;
     rps->bufLen = 8;
 
@@ -856,7 +863,7 @@ int popkcel_psrTryConnect(struct Popkcel_PsrField* psr)
     rps->buffer[0] = (unsigned char)(POPKCEL_PF_SYN | POPKCEL_PF_APT);
     rps->buffer[1] = POPKCEL_PSRVERSION;
     memcpy(rps->buffer + 2, &rnd, 4);
-    uint16_t wnd = htons(psr->window);
+    uint16_t wnd = htole16(psr->window);
     memcpy(rps->buffer + 6, &wnd, 2);
     if (rpsInit(rps, psr) == POPKCEL_ERROR) {
         free(rps);
@@ -868,13 +875,13 @@ int popkcel_psrTryConnect(struct Popkcel_PsrField* psr)
     it->key = h;
     it->value = psr;
     if (psr->sock->ipv6)
-        popkcel_rbtMultiInsert(&psr->sock->nodePf, (struct Popkcel_Rbtnode*)it);
+        popkcel_rbtMultiInsert(&psr->sock->nodePf, (struct Popkcel_Rbtnode *)it);
     else
-        popkcel_rbtInsertAtPos(&psr->sock->nodePf, ipos, (struct Popkcel_Rbtnode*)it);
+        popkcel_rbtInsertAtPos(&psr->sock->nodePf, ipos, (struct Popkcel_Rbtnode *)it);
     return POPKCEL_WOULDBLOCK;
 }
 
-int popkcel_psrTrySend(struct Popkcel_PsrField* psr, const char* data, size_t len, Popkcel_FuncCallback callback, void* userData)
+int popkcel_psrTrySend(struct Popkcel_PsrField *psr, const char *data, size_t len, Popkcel_FuncCallback callback, void *userData)
 {
     // printf("psrTrySend %d\n", psr->state);
     if (psr->state == POPKCEL_PS_CONNECTED) {
@@ -892,7 +899,7 @@ int popkcel_psrTrySend(struct Popkcel_PsrField* psr, const char* data, size_t le
     for (;;) {
         if (!psr->bufferPos) {
             psr->buffer[0] = (unsigned char)(POPKCEL_PF_TRANSFORM | POPKCEL_PF_APT);
-            uint32_t ul = htonl(psr->mySendId);
+            uint32_t ul = htole32(psr->mySendId);
             memcpy(psr->buffer + 5, &ul, 4);
             psr->bufferPos = 11;
         }
@@ -917,7 +924,7 @@ int popkcel_psrTrySend(struct Popkcel_PsrField* psr, const char* data, size_t le
         }
         else {
             memcpy(psr->buffer + psr->bufferPos, data, rlen);
-            uint32_t us = htons(POPKCEL_MAXUDPSIZE - 11);
+            uint32_t us = htole16(POPKCEL_MAXUDPSIZE - 11);
             memcpy(psr->buffer + 9, &us, 2);
             psr->bufferPos = POPKCEL_MAXUDPSIZE;
             if (rlen == len) {
@@ -946,14 +953,14 @@ int popkcel_psrTrySend(struct Popkcel_PsrField* psr, const char* data, size_t le
         return r;
 }
 
-int popkcel_psrSendCache(struct Popkcel_PsrField* psr)
+int popkcel_psrSendCache(struct Popkcel_PsrField *psr)
 {
     if (psr->bufferPos) {
-        uint16_t us = htons(psr->bufferPos - 11);
+        uint16_t us = htole16(psr->bufferPos - 11);
         memcpy(psr->buffer + 9, &us, 2);
         uint32_t ul = bufChecksum(psr->tranId, psr->buffer + 5, psr->bufferPos - 5);
         memcpy(psr->buffer + 1, &ul, 4);
-        int r = (int)popkcel_trySendto((struct Popkcel_Socket*)psr->sock, psr->buffer, psr->bufferPos, (struct sockaddr*)&psr->remoteAddr, psr->addrLen, NULL, NULL);
+        int r = (int)popkcel_trySendto((struct Popkcel_Socket *)psr->sock, psr->buffer, psr->bufferPos, (struct sockaddr *)&psr->remoteAddr, psr->addrLen, NULL, NULL);
         psr->bufferPos = 0;
         return r;
     }
@@ -961,7 +968,7 @@ int popkcel_psrSendCache(struct Popkcel_PsrField* psr)
         return POPKCEL_OK;
 }
 
-void popkcel_psrAcceptOne(struct Popkcel_PsrSocket* sock, struct Popkcel_PsrField* psr, Popkcel_PsrFuncCallback cbFunc)
+void popkcel_psrAcceptOne(struct Popkcel_PsrSocket *sock, struct Popkcel_PsrField *psr, Popkcel_PsrFuncCallback cbFunc)
 {
     popkcel_initPsrField(sock, psr, cbFunc);
     psr->state = POPKCEL_PS_CONNECTED;
@@ -971,7 +978,7 @@ void popkcel_psrAcceptOne(struct Popkcel_PsrSocket* sock, struct Popkcel_PsrFiel
     psr->addrLen = sock->remoteAddrLen;
 }
 
-int popkcel_initPsrSocket(struct Popkcel_PsrSocket* sock, struct Popkcel_Loop* loop, Popkcel_HandleType fd, char ipv6, uint16_t port, Popkcel_PsrListenCb listenCb, Popkcel_PsrRecvCb recvCb, uint16_t maxWindow)
+int popkcel_initPsrSocket(struct Popkcel_PsrSocket *sock, struct Popkcel_Loop *loop, Popkcel_HandleType fd, char ipv6, uint16_t port, Popkcel_PsrListenCb listenCb, Popkcel_PsrRecvCb recvCb, uint16_t maxWindow)
 {
     int t;
     if (fd)
@@ -980,10 +987,10 @@ int popkcel_initPsrSocket(struct Popkcel_PsrSocket* sock, struct Popkcel_Loop* l
         t = POPKCEL_SOCKETTYPE_UDP;
     if (ipv6)
         t |= POPKCEL_SOCKETTYPE_IPV6;
-    if (popkcel_initSocket((struct Popkcel_Socket*)sock, loop, t, fd) == POPKCEL_ERROR)
+    if (popkcel_initSocket((struct Popkcel_Socket *)sock, loop, t, fd) == POPKCEL_ERROR)
         return POPKCEL_ERROR;
-    if (popkcel_bind((struct Popkcel_Socket*)sock, port) == POPKCEL_ERROR) {
-        popkcel_destroySocket((struct Popkcel_Socket*)sock);
+    if (popkcel_bind((struct Popkcel_Socket *)sock, port) == POPKCEL_ERROR) {
+        popkcel_destroySocket((struct Popkcel_Socket *)sock);
         return POPKCEL_ERROR;
     }
     sock->listenCb = listenCb;
@@ -993,11 +1000,11 @@ int popkcel_initPsrSocket(struct Popkcel_PsrSocket* sock, struct Popkcel_Loop* l
     sock->lastSendTime = 0;
     sock->remoteAddrLen = sizeof(sock->remoteAddr);
 
-    ssize_t r = popkcel_tryRecvfrom((struct Popkcel_Socket*)sock, sock->psrBuffer, POPKCEL_MAXUDPSIZE, (struct sockaddr*)&sock->remoteAddr, &sock->remoteAddrLen, &psrRecvFromCb, sock);
+    ssize_t r = popkcel_tryRecvfrom((struct Popkcel_Socket *)sock, sock->psrBuffer, POPKCEL_MAXUDPSIZE, (struct sockaddr *)&sock->remoteAddr, &sock->remoteAddrLen, &psrRecvFromCb, sock);
     if (r >= 0)
         psrRecvFromCb(sock, r);
     else if (r == POPKCEL_ERROR) {
-        popkcel_destroySocket((struct Popkcel_Socket*)sock);
+        popkcel_destroySocket((struct Popkcel_Socket *)sock);
         return POPKCEL_ERROR;
     }
     sock->timerKeepAlive.funcCb = &psrKlTimerCb;
@@ -1009,19 +1016,19 @@ int popkcel_initPsrSocket(struct Popkcel_PsrSocket* sock, struct Popkcel_Loop* l
     return POPKCEL_OK;
 }
 
-void popkcel_destroyPsrSocket(struct Popkcel_PsrSocket* sock)
+void popkcel_destroyPsrSocket(struct Popkcel_PsrSocket *sock)
 {
     popkcel_stopTimer(&sock->timerKeepAlive);
-    popkcel_destroySocket((struct Popkcel_Socket*)sock);
+    popkcel_destroySocket((struct Popkcel_Socket *)sock);
 
     // 清理所有psrfield
-    struct Popkcel_RbtnodeData* it;
-    while ((it = (struct Popkcel_RbtnodeData*)sock->nodePf)) {
+    struct Popkcel_RbtnodeData *it;
+    while ((it = (struct Popkcel_RbtnodeData *)sock->nodePf)) {
         psrError(it->value);
     }
 }
 
-void popkcel_initPsrField(struct Popkcel_PsrSocket* sock, struct Popkcel_PsrField* psr, Popkcel_PsrFuncCallback cbFunc)
+void popkcel_initPsrField(struct Popkcel_PsrSocket *sock, struct Popkcel_PsrField *psr, Popkcel_PsrFuncCallback cbFunc)
 {
     psr->sock = sock;
     psr->nodePieceReceive = NULL;
@@ -1029,7 +1036,7 @@ void popkcel_initPsrField(struct Popkcel_PsrSocket* sock, struct Popkcel_PsrFiel
     psr->nodeReply = NULL;
     psr->state = POPKCEL_PS_INIT;
     psr->mySendId = 0;
-    psr->othersSendId = 0;
+    psr->oppositeSendId = 0;
     psr->lastMyConfirmedSendId = 0;
     psr->callback = cbFunc;
     psr->bufferPos = 0;
@@ -1040,7 +1047,7 @@ void popkcel_initPsrField(struct Popkcel_PsrSocket* sock, struct Popkcel_PsrFiel
     psr->window = sock->maxWindow;
     psr->synConfirm = 0;
     popkcel_initTimer(&psr->timer, sock->loop);
-    struct sockaddr* sa = (struct sockaddr*)&psr->remoteAddr;
+    struct sockaddr *sa = (struct sockaddr *)&psr->remoteAddr;
     if (sock->ipv6) {
         sa->sa_family = AF_INET6;
         psr->addrLen = sizeof(struct sockaddr_in6);
@@ -1051,13 +1058,13 @@ void popkcel_initPsrField(struct Popkcel_PsrSocket* sock, struct Popkcel_PsrFiel
     }
 }
 
-void popkcel_destroyPsrField(struct Popkcel_PsrField* psr)
+void popkcel_destroyPsrField(struct Popkcel_PsrField *psr)
 {
-    int64_t h = ipPortHash((struct sockaddr*)&psr->remoteAddr);
-    struct Popkcel_Rbtnode* it = popkcel_rbtFind(psr->sock->nodePf, h);
+    int64_t h = ipPortHash((struct sockaddr *)&psr->remoteAddr);
+    struct Popkcel_Rbtnode *it = popkcel_rbtFind(psr->sock->nodePf, h);
     if (it) {
         if (psr->sock->ipv6) {
-            while (((struct Popkcel_RbtnodeData*)it)->value != psr) {
+            while (((struct Popkcel_RbtnodeData *)it)->value != psr) {
                 it = popkcel_rbtNext(it);
                 if (!it || it->key != h)
                     goto notFound;
@@ -1069,7 +1076,7 @@ void popkcel_destroyPsrField(struct Popkcel_PsrField* psr)
 notFound:;
     it = psr->nodePieceSend;
     while (it) {
-        struct Popkcel_RbtnodePsrSend* oit = (struct Popkcel_RbtnodePsrSend*)it;
+        struct Popkcel_RbtnodePsrSend *oit = (struct Popkcel_RbtnodePsrSend *)it;
         if (it->left) {
             it = it->left;
             oit->left = NULL;
@@ -1090,7 +1097,7 @@ notFound:;
     psr->nodePieceSend = NULL;
     it = psr->nodePieceReceive;
     while (it) {
-        struct Popkcel_Rbtnode* oit = it;
+        struct Popkcel_Rbtnode *oit = it;
         if (it->left) {
             it = it->left;
             oit->left = NULL;
@@ -1107,7 +1114,7 @@ notFound:;
     psr->nodePieceReceive = NULL;
     it = psr->nodeReply;
     while (it) {
-        struct Popkcel_Rbtnode* oit = it;
+        struct Popkcel_Rbtnode *oit = it;
         if (it->left) {
             it = it->left;
             oit->left = NULL;
@@ -1124,4 +1131,23 @@ notFound:;
     psr->nodeReply = NULL;
     psr->state = POPKCEL_PS_CLOSED;
     popkcel_stopTimer(&psr->timer);
+}
+
+struct Popkcel_PsrField *popkcel_psrFind(struct Popkcel_PsrSocket *sock, struct sockaddr *addr)
+{
+    int64_t h = ipPortHash(addr);
+    struct Popkcel_RbtnodeData *it = (struct Popkcel_RbtnodeData *)popkcel_rbtFind(sock->nodePf, h);
+    if (it) {
+        struct Popkcel_PsrField *psr = it->value;
+        if (sock->ipv6) {
+            while (memcmp(&psr->remoteAddr.sin6_addr, &((struct sockaddr_in6 *)addr)->sin6_addr, sizeof(sock->remoteAddr.sin6_addr))) {
+                it = (struct Popkcel_RbtnodeData *)popkcel_rbtNext((struct Popkcel_Rbtnode *)it);
+                if (!it || it->key != h)
+                    return NULL;
+                psr = it->value;
+            }
+        }
+    }
+    else
+        return NULL;
 }

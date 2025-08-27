@@ -8,6 +8,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 */
 
 #include "popkcel.h"
+#include "popkcel_private.h"
 
 #include <assert.h>
 #include <dlfcn.h>
@@ -376,7 +377,7 @@ static int readForInRedo(void *data, intptr_t ev)
             r = read(sock->fd, sock->rbuf, sock->rlen);
             if (r >= 0 && r < sock->rlen) {
                 sock->rbuf += r;
-                sock->rlen += r;
+                sock->rlen -= r;
             }
             else if (r == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
                 return 0;
@@ -412,7 +413,7 @@ ssize_t popkcel_tryReadFor(struct Popkcel_Socket *sock, char *buf, size_t len, P
         r = read(sock->fd, buf, len);
         if (r >= 0 && r < len) {
             buf += r;
-            len += r;
+            len -= r;
         }
         else if (r == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
             if (sock->so.inRedo)
@@ -512,11 +513,7 @@ static int listenerCb(void *data, intptr_t ev)
     struct Popkcel_Listener *listener = data;
     if (listener->funcAccept) {
         struct sockaddr_in6 addr;
-        socklen_t len;
-        if (listener->ipv6)
-            len = sizeof(struct sockaddr_in6);
-        else
-            len = sizeof(struct sockaddr_in);
+        socklen_t len = sizeof(addr);
 
         for (;;) {
             int r = accept(listener->fd, (struct sockaddr *)&addr, &len);
@@ -532,7 +529,9 @@ static int listenerCb(void *data, intptr_t ev)
 
 int popkcel_listen(struct Popkcel_Listener *listener, uint16_t port, int backlog)
 {
-    popkcel_bind((struct Popkcel_Socket *)listener, port);
+    if (popkcel_bind((struct Popkcel_Socket *)listener, port) != POPKCEL_OK)
+        return POPKCEL_ERROR;
+
     if (listen(listener->fd, backlog))
         return POPKCEL_ERROR;
     else {
@@ -587,4 +586,13 @@ int popkcel_dlclose(void *handle)
 void *popkcel_dlsym(void *handle, const char *symbol)
 {
     return dlsym(handle, symbol);
+}
+
+int popkcel_getpeername(struct Popkcel_Socket *sock, struct sockaddr *addr, socklen_t *addrLen)
+{
+    int r = getpeername(sock->fd, addr, addrLen);
+    if (!r)
+        return POPKCEL_OK;
+    else
+        return POPKCEL_ERROR;
 }

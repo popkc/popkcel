@@ -1,5 +1,5 @@
 .vscode/
-build/
+build*
 .clangd/
 cmake-build*
 .vs/
@@ -22,6 +22,7 @@ CMakeSettings.json
 *.bak
 *.autosave
 createbundle*
-custom.txt
+createtags
+custom.cmake
 cmake_install.cmake
 CMakeCache.txt

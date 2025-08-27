@@ -8,8 +8,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 */
 
 #include "popkcel.h"
+#include "popkcel_private.h"
 
-struct Popkcel_Rbtnode* popkcel_rbtFind(struct Popkcel_Rbtnode* root, int64_t key)
+struct Popkcel_Rbtnode *popkcel_rbtFind(struct Popkcel_Rbtnode *root, int64_t key)
 {
     int64_t r;
     while (root) {
@@ -29,9 +30,9 @@ struct Popkcel_Rbtnode* popkcel_rbtFind(struct Popkcel_Rbtnode* root, int64_t ke
     return NULL;
 }
 
-static void rightRotate(struct Popkcel_Rbtnode** root, struct Popkcel_Rbtnode* node)
+static void rightRotate(struct Popkcel_Rbtnode **root, struct Popkcel_Rbtnode *node)
 {
-    struct Popkcel_Rbtnode* left = node->left;
+    struct Popkcel_Rbtnode *left = node->left;
     node->left = left->right;
     if (node->left)
         node->left->parent = node;
@@ -49,9 +50,9 @@ static void rightRotate(struct Popkcel_Rbtnode** root, struct Popkcel_Rbtnode* n
     node->parent = left;
 }
 
-static void leftRotate(struct Popkcel_Rbtnode** root, struct Popkcel_Rbtnode* node)
+static void leftRotate(struct Popkcel_Rbtnode **root, struct Popkcel_Rbtnode *node)
 {
-    struct Popkcel_Rbtnode* right = node->right;
+    struct Popkcel_Rbtnode *right = node->right;
     node->right = right->left;
     if (node->right)
         node->right->parent = node;
@@ -69,11 +70,11 @@ static void leftRotate(struct Popkcel_Rbtnode** root, struct Popkcel_Rbtnode* no
     node->parent = right;
 }
 
-static void rbtBalance(struct Popkcel_Rbtnode** root, struct Popkcel_Rbtnode* node)
+static void rbtBalance(struct Popkcel_Rbtnode **root, struct Popkcel_Rbtnode *node)
 {
-    struct Popkcel_Rbtnode* pnode;
+    struct Popkcel_Rbtnode *pnode;
     while ((pnode = node->parent) && pnode->isRed) {
-        struct Popkcel_Rbtnode* gpnode = pnode->parent;
+        struct Popkcel_Rbtnode *gpnode = pnode->parent;
         if (gpnode->left == pnode) {
             if (gpnode->right && gpnode->right->isRed) {
                 pnode->isRed = 0;
@@ -83,7 +84,7 @@ static void rbtBalance(struct Popkcel_Rbtnode** root, struct Popkcel_Rbtnode* no
             }
             else {
                 if (node == pnode->right) {
-                    struct Popkcel_Rbtnode* tmp;
+                    struct Popkcel_Rbtnode *tmp;
                     leftRotate(root, pnode);
                     tmp = node;
                     node = pnode;
@@ -104,7 +105,7 @@ static void rbtBalance(struct Popkcel_Rbtnode** root, struct Popkcel_Rbtnode* no
             }
             else {
                 if (node == pnode->left) {
-                    struct Popkcel_Rbtnode* tmp;
+                    struct Popkcel_Rbtnode *tmp;
                     rightRotate(root, pnode);
                     tmp = node;
                     node = pnode;
@@ -121,7 +122,7 @@ static void rbtBalance(struct Popkcel_Rbtnode** root, struct Popkcel_Rbtnode* no
     (*root)->isRed = 0;
 }
 
-struct Popkcel_RbtInsertPos popkcel_rbtInsertPos(struct Popkcel_Rbtnode** root, int64_t key)
+struct Popkcel_RbtInsertPos popkcel_rbtInsertPos(struct Popkcel_Rbtnode **root, int64_t key)
 {
     struct Popkcel_RbtInsertPos ipos;
     if (!*root) {
@@ -129,7 +130,7 @@ struct Popkcel_RbtInsertPos popkcel_rbtInsertPos(struct Popkcel_Rbtnode** root, 
         ipos.parent = NULL;
         return ipos;
     }
-    struct Popkcel_Rbtnode* pnode;
+    struct Popkcel_Rbtnode *pnode;
     do {
         int64_t r = key - (*root)->key;
         if (r == 0) {
@@ -150,7 +151,7 @@ struct Popkcel_RbtInsertPos popkcel_rbtInsertPos(struct Popkcel_Rbtnode** root, 
     return ipos;
 }
 
-void popkcel_rbtInsertAtPos(struct Popkcel_Rbtnode** root, struct Popkcel_RbtInsertPos ipos, struct Popkcel_Rbtnode* inode)
+void popkcel_rbtInsertAtPos(struct Popkcel_Rbtnode **root, struct Popkcel_RbtInsertPos ipos, struct Popkcel_Rbtnode *inode)
 {
     *ipos.ipos = inode;
     inode->left = NULL;
@@ -164,7 +165,7 @@ void popkcel_rbtInsertAtPos(struct Popkcel_Rbtnode** root, struct Popkcel_RbtIns
         inode->isRed = 0;
 }
 
-void popkcel_rbtMultiInsert(struct Popkcel_Rbtnode** root, struct Popkcel_Rbtnode* inode)
+void popkcel_rbtMultiInsert(struct Popkcel_Rbtnode **root, struct Popkcel_Rbtnode *inode)
 {
     if (!*root) {
         *root = inode;
@@ -174,8 +175,8 @@ void popkcel_rbtMultiInsert(struct Popkcel_Rbtnode** root, struct Popkcel_Rbtnod
         inode->isRed = 0;
     }
     else {
-        struct Popkcel_Rbtnode** anode = root;
-        struct Popkcel_Rbtnode* pnode;
+        struct Popkcel_Rbtnode **anode = root;
+        struct Popkcel_Rbtnode *pnode;
         do {
             int64_t r = inode->key - (*anode)->key;
             pnode = *anode;
@@ -193,9 +194,9 @@ void popkcel_rbtMultiInsert(struct Popkcel_Rbtnode** root, struct Popkcel_Rbtnod
     }
 }
 
-struct Popkcel_Rbtnode* popkcel_rbtNext(struct Popkcel_Rbtnode* node)
+struct Popkcel_Rbtnode *popkcel_rbtNext(struct Popkcel_Rbtnode *node)
 {
-    struct Popkcel_Rbtnode* n = node->right;
+    struct Popkcel_Rbtnode *n = node->right;
     if (n) {
         while (n->left) {
             n = n->left;
@@ -212,7 +213,7 @@ struct Popkcel_Rbtnode* popkcel_rbtNext(struct Popkcel_Rbtnode* node)
     return NULL;
 }
 
-struct Popkcel_Rbtnode* popkcel_rbtBegin(struct Popkcel_Rbtnode* root)
+struct Popkcel_Rbtnode *popkcel_rbtBegin(struct Popkcel_Rbtnode *root)
 {
     if (!root)
         return NULL;
@@ -221,9 +222,9 @@ struct Popkcel_Rbtnode* popkcel_rbtBegin(struct Popkcel_Rbtnode* root)
     return root;
 }
 
-void popkcel_rbtDelete(struct Popkcel_Rbtnode** root, struct Popkcel_Rbtnode* node)
+void popkcel_rbtDelete(struct Popkcel_Rbtnode **root, struct Popkcel_Rbtnode *node)
 {
-    struct Popkcel_Rbtnode* n2,*child,*parent;
+    struct Popkcel_Rbtnode *n2, *child, *parent;
     char isRed;
     if (node->left && node->right) {
         n2 = node->right;
@@ -495,9 +496,9 @@ restart:;
     }
 }
 */
-struct Popkcel_Rbtnode* popkcel_rbtLowerBound(struct Popkcel_Rbtnode* root, int64_t key)
+struct Popkcel_Rbtnode *popkcel_rbtLowerBound(struct Popkcel_Rbtnode *root, int64_t key)
 {
-    struct Popkcel_Rbtnode* it = NULL;
+    struct Popkcel_Rbtnode *it = NULL;
     while (root) {
         if (key < root->key) {
             it = root;
