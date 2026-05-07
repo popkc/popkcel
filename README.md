@@ -1,7 +1,7 @@
 # popkcel
 一个用纯C实现的跨平台的简单的异步网络库，带有协程功能。
 
-popkcel是“popkc的event loop”的意思，它支持epoll、kqueue和IOCP。相比于libuv，它的特点是轻量、简单，而且支持一种类似于协程的功能，使得你可以像写同步代码一样地写异步代码。它还支持一种简单的可靠UDP传输协议PSR（既Popkc's Simple Reliable UDP），可以利用UDP打洞的原理为内网机器之间提供类似TCP的可靠连接。
+popkcel是“popkc的event loop”的意思，它支持epoll、kqueue和IOCP。相比于libuv，它的特点是轻量、简单，而且支持一种类似于协程的功能，使得你可以像写同步代码一样地写异步代码。
 
 popkcel用简单的方法来实现协程。它先在loop的事件循环函数中用setjmp来标记一个点，并记录这个点在stack中的位置。当某个协程需要挂起时，这个协程也标记自己的当前点，并把当前点到事件循环函数中的点之间的stack保存下来，然后longjmp到那个点上。要恢复协程，就longjmp到协程之前保存的点上，再用memcpy把之前保存的stack恢复。
 
@@ -105,10 +105,6 @@ popkcel支持ipv6，初始化socket时加上POPKCEL_SOCKETTYPE_IPV6即可。
 popkcel_initSocket(sock, (Popkcel_Loop*)data, POPKCEL_SOCKETTYPE_TCP | POPKCEL_SOCKETTYPE_IPV6, 0);
 ```
 popkcel_initListener函数的第三个参数为1时表示监听ipv6地址。
-
-popkcel还支持通过udp方式模拟tcp连接。popkcel支持一种名为psr的协议，这协议是我自己定义的，它比较简单，可以让udp连接像tcp一样可靠。它当然不是真的tcp连接，它只是让udp像tcp一样可靠。要知道在ipv6还没有彻底流行的现在，要在两台不同内网的计算机间进行点对点的可靠通信是非常麻烦的事，而这就是psr协议要解决的事情。类似的协议已经有不少了（如utorrent的utp），但我的psr胜在简单，如果只是进行简单的通信而不是进行大文件传输的话，用psr就够了。
-
-可以参考test里的代码来使用psr。psr目前只支持异步操作，暂不支持伪同步操作。
 
 ## 操作系统支持
 

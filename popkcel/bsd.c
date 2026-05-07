@@ -43,16 +43,22 @@ static void makeTimespec(struct timespec *ts, int ms)
     ts->tv_nsec = dt.rem * 1000000;
 }
 
-void popkcel_initLoop(struct Popkcel_Loop *loop, size_t maxEvents)
+int popkcel_initLoop(struct Popkcel_Loop *loop, size_t maxEvents)
 {
-    loop->running = 0;
     loop->loopFd = kqueue();
+    if (loop->loopFd == -1)
+        return POPKCEL_ERROR;
+    if (popkcel_initSysTimer(&loop->sysTimer, loop) == POPKCEL_ERROR) {
+        close(loop->loopFd);
+        return POPKCEL_ERROR;
+    }
     if (maxEvents == 0)
         maxEvents = 8;
     loop->events = malloc(sizeof(struct kevent) * maxEvents);
     loop->maxEvents = maxEvents;
-    popkcel_initSysTimer(&loop->sysTimer, loop);
     loop->timers = NULL;
+    loop->running = 0;
+    return POPKCEL_OK;
 }
 
 int popkcel_addHandle(struct Popkcel_Loop *loop, struct Popkcel_Handle *handle, int ev)
@@ -152,10 +158,10 @@ int popkcel_runLoop(struct Popkcel_Loop *loop)
     return 0;
 }
 
-void popkcel_initNotifier(struct Popkcel_Notifier *notifier, struct Popkcel_Loop *loop)
+int popkcel_initNotifier(struct Popkcel_Notifier *notifier, struct Popkcel_Loop *loop)
 {
     popkcel_initHandle((struct Popkcel_Handle *)notifier, loop);
-    popkcel_addHandle(loop, (struct Popkcel_Handle *)notifier, POPKCEL_EVENT_USER | POPKCEL_EVENT_EDGE);
+    return popkcel_addHandle(loop, (struct Popkcel_Handle *)notifier, POPKCEL_EVENT_USER | POPKCEL_EVENT_EDGE);
 }
 
 int popkcel_notifierNotify(struct Popkcel_Notifier *notifier)
@@ -178,9 +184,10 @@ void popkcel_destroyNotifier(struct Popkcel_Notifier *notifier)
     kevent(notifier->loop->loopFd, &kev, 1, NULL, 0, NULL);
 }
 
-void popkcel_initSysTimer(struct Popkcel_SysTimer *sysTimer, struct Popkcel_Loop *loop)
+int popkcel_initSysTimer(struct Popkcel_SysTimer *sysTimer, struct Popkcel_Loop *loop)
 {
     popkcel_initHandle((struct Popkcel_Handle *)sysTimer, loop);
+    return POPKCEL_OK;
 }
 
 void popkcel_setSysTimer(struct Popkcel_SysTimer *sysTimer, unsigned int timeout, char periodic, Popkcel_FuncCallback cb, void *data)

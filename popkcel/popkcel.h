@@ -349,8 +349,9 @@ struct Popkcel_SysTimer
 /**初始化SysTimer
  * @param sysTimer 需要初始化的SysTimer
  * @param loop 将SysTimer初始化到这个Loop上
+ * @return 初始化成功则返回POPKCEL_OK，否则返回POPKCEL_ERROR
  */
-LIBPOPKCEL_EXTERN void popkcel_initSysTimer(struct Popkcel_SysTimer *sysTimer, struct Popkcel_Loop *loop);
+LIBPOPKCEL_EXTERN int popkcel_initSysTimer(struct Popkcel_SysTimer *sysTimer, struct Popkcel_Loop *loop);
 /**销毁SysTimer，这不会从内存中删除SysTimer
  * @param sysTimer 要销毁的SysTimer
  */
@@ -383,8 +384,9 @@ struct Popkcel_Notifier
 /**初始化Notifier
  * @param notifier 需要初始化的Notifier
  * @param loop 将Notifier初始化到这个Loop上
+ * @return 初始化成功则返回POPKCEL_OK，否则返回POPKCEL_ERROR
  */
-LIBPOPKCEL_EXTERN void popkcel_initNotifier(struct Popkcel_Notifier *notifier, struct Popkcel_Loop *loop);
+LIBPOPKCEL_EXTERN int popkcel_initNotifier(struct Popkcel_Notifier *notifier, struct Popkcel_Loop *loop);
 /**销毁Notifier，这不会将Notifier从内存中删除
  * @param notifier 要销毁的notifier
  */
@@ -745,8 +747,9 @@ struct Popkcel_Listener
  * @param loop 将Listener初始化到这个Loop上
  * @param ipv6 是否为ipv6。为0表示ipv4，为1表示仅ipv6。
  * @param fd 如果非0，则表示复用文件描述符为fd的socket
+ * @return 初始化成功返回POPKCEL_OK，失败返回POPKCEL_ERROR
  */
-LIBPOPKCEL_EXTERN void popkcel_initListener(struct Popkcel_Listener *listener, struct Popkcel_Loop *loop, char ipv6, Popkcel_HandleType fd);
+LIBPOPKCEL_EXTERN int popkcel_initListener(struct Popkcel_Listener *listener, struct Popkcel_Loop *loop, char ipv6, Popkcel_HandleType fd);
 /**
  * 销毁Listener。这不会将Listener从内存中删除。
  * @param listener 要销毁的Listener
@@ -823,8 +826,9 @@ struct Popkcel_Loop
  * 初始化Loop
  * @param loop 要初使化的Loop
  * @param maxEvents 最大事件数，分配的events数组大小，为0表示取默认值。在windows下无意义
+ * @return 如果为POPKCEL_OK，表示初始化成功，否则表示初始化失败。
  */
-LIBPOPKCEL_EXTERN void popkcel_initLoop(struct Popkcel_Loop *loop, size_t maxEvents);
+LIBPOPKCEL_EXTERN int popkcel_initLoop(struct Popkcel_Loop *loop, size_t maxEvents);
 /**
  * 销毁Loop。这不会将Loop从内存中删除。
  * @param loop 要销毁的Loop

@@ -32,13 +32,14 @@ static inline void initIocpCallback(struct Popkcel_IocpCallback *iocp)
     memset(iocp, 0, sizeof(struct Popkcel_IocpCallback));
 }
 
-void popkcel_initLoop(struct Popkcel_Loop *loop, size_t maxEvents)
+int popkcel_initLoop(struct Popkcel_Loop *loop, size_t maxEvents)
 {
     loop->running = 0;
     loop->timers = NULL;
     loop->loopFd = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
     popkcel_initSysTimer(&loop->sysTimer, loop);
     loop->curOverlapped = NULL;
+    return POPKCEL_OK;
 }
 
 void popkcel_destroyLoop(struct Popkcel_Loop *loop)
@@ -112,10 +113,11 @@ int popkcel_removeHandle(struct Popkcel_Loop *loop, struct Popkcel_Handle *handl
     return POPKCEL_ERROR;
 }
 
-void popkcel_initNotifier(struct Popkcel_Notifier *notifier, struct Popkcel_Loop *loop)
+int popkcel_initNotifier(struct Popkcel_Notifier *notifier, struct Popkcel_Loop *loop)
 {
     // popkcel_initHandle((struct Popkcel_Handle*)notifier, loop);
     notifier->loop = loop;
+    return POPKCEL_OK;
 }
 
 static int notifierCb(void *data, intptr_t rv)
@@ -156,10 +158,11 @@ static VOID CALLBACK sysTimerCb(PVOID data, BOOLEAN fired)
         st->funcCb(st->cbData, POPKCEL_OK);
 }
 
-void popkcel_initSysTimer(struct Popkcel_SysTimer *sysTimer, struct Popkcel_Loop *loop)
+int popkcel_initSysTimer(struct Popkcel_SysTimer *sysTimer, struct Popkcel_Loop *loop)
 {
     sysTimer->loop = loop;
     sysTimer->fd = 0;
+    return POPKCEL_OK;
 }
 
 void popkcel_setSysTimer(struct Popkcel_SysTimer *sysTimer, unsigned int timeout, char periodic, Popkcel_FuncCallback cb, void *data)
@@ -505,7 +508,7 @@ static void listenerAcceptOne(struct Popkcel_Listener *listener)
     globalVars.AcceptEx((SOCKET)listener->fd, (SOCKET)listener->curSock, listener->buffer, 0, addrLen, addrLen, NULL, (LPOVERLAPPED)ic);
 }
 
-void popkcel_initListener(struct Popkcel_Listener *listener, struct Popkcel_Loop *loop, char ipv6, Popkcel_HandleType fd)
+int popkcel_initListener(struct Popkcel_Listener *listener, struct Popkcel_Loop *loop, char ipv6, Popkcel_HandleType fd)
 {
     listener->loop = loop;
     listener->ipv6 = ipv6;
@@ -515,6 +518,7 @@ void popkcel_initListener(struct Popkcel_Listener *listener, struct Popkcel_Loop
         listener->fd = (Popkcel_HandleType)WSASocketW(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
     popkcel_addHandle(loop, (struct Popkcel_Handle *)listener, 0);
     listener->curSock = (Popkcel_HandleType)WSASocketW(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+    return POPKCEL_OK;
 }
 
 int popkcel_listen(struct Popkcel_Listener *listener, uint16_t port, int backlog)

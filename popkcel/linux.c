@@ -113,15 +113,27 @@ static int sysTimerInRedo(void *data, intptr_t ev)
     return 0;
 }
 
-void popkcel_initSysTimer(struct Popkcel_SysTimer *sysTimer, struct Popkcel_Loop *loop)
+int popkcel_initSysTimer(struct Popkcel_SysTimer *sysTimer, struct Popkcel_Loop *loop)
 {
     popkcel_initHandle((struct Popkcel_Handle *)sysTimer, loop);
     sysTimer->fd = timerfd_create(CLOCK_MONOTONIC, 0);
+    if (sysTimer->fd == -1)
+        return POPKCEL_ERROR;
+    int f = fcntl(sysTimer->fd, F_GETFL);
+    if (f == -1)
+        goto labelError;
+    f = fcntl(sysTimer->fd, F_SETFL, f | O_NONBLOCK);
+    if (f == -1)
+        goto labelError;
+    f = popkcel_addHandle(loop, (struct Popkcel_Handle *)sysTimer, POPKCEL_EVENT_IN | POPKCEL_EVENT_EDGE);
+    if (f == POPKCEL_ERROR)
+        goto labelError;
     sysTimer->so.inRedo = &sysTimerInRedo;
     sysTimer->so.inRedoData = sysTimer;
-    int f = fcntl(sysTimer->fd, F_GETFL);
-    fcntl(sysTimer->fd, F_SETFL, f | O_NONBLOCK);
-    popkcel_addHandle(loop, (struct Popkcel_Handle *)sysTimer, POPKCEL_EVENT_IN | POPKCEL_EVENT_EDGE);
+    return POPKCEL_OK;
+labelError:
+    close(sysTimer->fd);
+    return POPKCEL_ERROR;
 }
 
 void popkcel_destroySysTimer(struct Popkcel_SysTimer *sysTimer)
@@ -167,15 +179,27 @@ static int notifierInRedo(void *data, intptr_t ev)
     return 0;
 }
 
-void popkcel_initNotifier(struct Popkcel_Notifier *notifier, struct Popkcel_Loop *loop)
+int popkcel_initNotifier(struct Popkcel_Notifier *notifier, struct Popkcel_Loop *loop)
 {
     popkcel_initHandle((struct Popkcel_Handle *)notifier, loop);
     notifier->fd = eventfd(0, EFD_NONBLOCK);
+    if (notifier->fd == -1)
+        return POPKCEL_ERROR;
+    int f = fcntl(notifier->fd, F_GETFL);
+    if (f == -1)
+        goto labelError;
+    f = fcntl(notifier->fd, F_SETFL, f | O_NONBLOCK);
+    if (f == -1)
+        goto labelError;
+    f = popkcel_addHandle(loop, (struct Popkcel_Handle *)notifier, POPKCEL_EVENT_IN | POPKCEL_EVENT_EDGE);
+    if (f == -1)
+        goto labelError;
     notifier->so.inRedo = &notifierInRedo;
     notifier->so.inRedoData = notifier;
-    int f = fcntl(notifier->fd, F_GETFL);
-    fcntl(notifier->fd, F_SETFL, f | O_NONBLOCK);
-    popkcel_addHandle(loop, (struct Popkcel_Handle *)notifier, POPKCEL_EVENT_IN | POPKCEL_EVENT_EDGE);
+    return POPKCEL_OK;
+labelError:
+    close(notifier->fd);
+    return POPKCEL_ERROR;
 }
 
 void popkcel_destroyNotifier(struct Popkcel_Notifier *notifier)
@@ -202,14 +226,22 @@ int popkcel_notifierNotify(struct Popkcel_Notifier *notifier)
         return POPKCEL_ERROR;
 }
 
-void popkcel_initLoop(struct Popkcel_Loop *loop, size_t maxEvents)
+int popkcel_initLoop(struct Popkcel_Loop *loop, size_t maxEvents)
 {
-    loop->running = 0;
-    loop->timers = NULL;
-    popkcel_initSysTimer(&loop->sysTimer, loop);
     if (maxEvents == 0)
         maxEvents = 8;
+    loop->loopFd = epoll_create(maxEvents);
+    if (loop->loopFd == -1)
+        return POPKCEL_ERROR;
+
+    if (popkcel_initSysTimer(&loop->sysTimer, loop) == POPKCEL_ERROR) {
+        close(loop->loopFd);
+        return POPKCEL_ERROR;
+    }
+
     loop->events = malloc(sizeof(struct epoll_event) * maxEvents);
     loop->maxEvents = maxEvents;
-    loop->loopFd = epoll_create(maxEvents);
+    loop->running = 0;
+    loop->timers = NULL;
+    return POPKCEL_OK;
 }

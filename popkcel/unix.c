@@ -89,8 +89,6 @@ int popkcel_closeSocket(Popkcel_HandleType fd)
 int popkcel_initSocket(struct Popkcel_Socket *sock, struct Popkcel_Loop *loop, int socketType, Popkcel_HandleType fd)
 {
     popkcel_initHandle((struct Popkcel_Handle *)sock, loop);
-    sock->writeBuffer = NULL;
-    sock->ipv6 = (socketType & POPKCEL_SOCKETTYPE_IPV6) ? 1 : 0;
     if (socketType & POPKCEL_SOCKETTYPE_EXIST) {
         sock->fd = fd;
     }
@@ -98,14 +96,27 @@ int popkcel_initSocket(struct Popkcel_Socket *sock, struct Popkcel_Loop *loop, i
         sock->fd = socket((socketType & POPKCEL_SOCKETTYPE_IPV6) ? AF_INET6 : AF_INET,
             (socketType & POPKCEL_SOCKETTYPE_TCP) ? SOCK_STREAM : SOCK_DGRAM, 0);
     }
+
+    int opt = 1;
     int f = fcntl(sock->fd, F_GETFL);
     if (f == -1)
-        return POPKCEL_ERROR;
+        goto labelError;
     f = fcntl(sock->fd, F_SETFL, f | O_NONBLOCK);
     if (f == -1)
-        return POPKCEL_ERROR;
-    popkcel_addHandle(loop, (struct Popkcel_Handle *)sock, 0);
+        goto labelError;
+    f = setsockopt(sock->fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    if (f == -1)
+        goto labelError;
+    f = popkcel_addHandle(loop, (struct Popkcel_Handle *)sock, 0);
+    if (f == POPKCEL_ERROR)
+        goto labelError;
+    sock->writeBuffer = NULL;
+    sock->ipv6 = (socketType & POPKCEL_SOCKETTYPE_IPV6) ? 1 : 0;
     return POPKCEL_OK;
+labelError:
+    if (!(socketType & POPKCEL_SOCKETTYPE_EXIST))
+        close(sock->fd);
+    return POPKCEL_ERROR;
 }
 
 static void clearWriteBuffer(struct Popkcel_Socket *sock)
@@ -488,16 +499,32 @@ static void* runLoopCaller(void* data)
     return NULL;
 }
 */
-void popkcel_initListener(struct Popkcel_Listener *listener, struct Popkcel_Loop *loop, char ipv6, Popkcel_HandleType fd)
+int popkcel_initListener(struct Popkcel_Listener *listener, struct Popkcel_Loop *loop, char ipv6, Popkcel_HandleType fd)
 {
     popkcel_initHandle((struct Popkcel_Handle *)listener, loop);
     if (fd)
         listener->fd = fd;
-    else
+    else {
         listener->fd = socket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0);
-    listener->ipv6 = ipv6;
+        if (listener->fd == -1)
+            return POPKCEL_ERROR;
+    }
     int f = fcntl(listener->fd, F_GETFL);
-    fcntl(listener->fd, F_SETFL, f | O_NONBLOCK);
+    int opt = 1;
+    if (f == -1)
+        goto labelError;
+    f = fcntl(listener->fd, F_SETFL, f | O_NONBLOCK);
+    if (f == -1)
+        goto labelError;
+    f = setsockopt(listener->fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    if (f == -1)
+        goto labelError;
+    listener->ipv6 = ipv6;
+    return POPKCEL_OK;
+labelError:
+    if (!fd)
+        close(listener->fd);
+    return POPKCEL_ERROR;
 }
 
 void popkcel_destroyListener(struct Popkcel_Listener *listener)
